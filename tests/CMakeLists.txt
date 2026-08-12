@@ -6,7 +6,8 @@ target_sources(NeonFoundryCoreTests PRIVATE
     UserProgramDirectoryTests.cpp
     ProgramIdTests.cpp
     ParameterSnapshotTests.cpp
-    UserProgramStoreTests.cpp)
+    UserProgramStoreTests.cpp
+    ParameterReadoutTests.cpp)
 
 target_compile_definitions(NeonFoundryCoreTests PRIVATE
     JUCE_WEB_BROWSER=0

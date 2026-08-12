@@ -1,0 +1,162 @@
+#pragma once
+
+#include <juce_audio_processors/juce_audio_processors.h>
+
+namespace nf
+{
+
+/** How a casting spells its LCD parameter readout.
+
+    The suite convention is `NAME: VALUE UNIT` — the control's printed name, the value, and the
+    unit — shown while a control is being moved and reverting shortly after release. Six castings
+    implemented it five different ways.
+*/
+struct ReadoutFormat
+{
+    /** `NAME: VALUE` against `NAME VALUE`. Elmer's spec asks for no colon and that is the only
+        legitimate divergence; everything else here is drift. */
+    bool separatorColon = true;
+
+    /** **Leave this false.** It exists only so the one casting that wants it has to say so, in a
+        place where this comment is attached to the decision.
+
+        Elmer's source got the reasoning right first: *"A capital S is a different unit from a
+        lowercase one."* Upper-casing the value text reaches the unit whenever the unit is baked
+        into that text rather than carried in `getLabel()` — Reflect-84 printed `DAMPING HF: 4.8
+        KHZ`, `DECAY: 4.6 S` and `OUTPUT TRIM: +2.5 DB` that way, and `KHZ` is not a unit at all.
+        It also reaches a choice parameter's authored strings, so `Soft` became `SOFT`.
+
+        If a display should read `SOFT`, author the choice that way in the casting's `Parameters.h`
+        so the host's automation lane agrees. Re-casing it here makes the two disagree again by
+        exactly this route.
+
+        **It reaches `getText()` only — a `getLabel()` unit is never touched.** So the flag is
+        harmless for a unit carried the way JUCE intends and harmful for one baked into the value
+        text, and a casting cannot tell which it has without looking. That asymmetry is asserted in
+        the tests rather than left to be discovered. */
+    bool uppercaseValue = false;
+
+    /** **900 ms, and the number is single-sourced here rather than being a plurality vote.**
+
+        The suite ran 800 / 900 / 1100 / 1200 under three different constant names and two
+        mechanisms, with no spec anywhere justifying any of them. 900 was what three castings had,
+        and there is no argument for the others beyond nobody having compared them. */
+    int revertMs = 900;
+
+    /** Passed to `getName()`. A casting sets this to its own LCD character budget so a long
+        control name is elided by JUCE rather than overrunning the cell. */
+    int nameCharacterBudget = 64;
+};
+
+/** The readout string for a parameter: `NAME: VALUE UNIT`.
+
+    **Routed through the parameter's own `getText` and `getLabel`, never re-derived.** That is the
+    whole reason this is one function: the LCD and the host's automation lane read the same
+    parameter, so they must print the same string, and a casting that formats values itself is
+    maintaining a second implementation that will disagree.
+
+    It disagreed twice. TapeRot printed `DRIVE: 20.0000000` because no float parameter carried a
+    `stringFromValueFunction` and JUCE leaves `numDecimalPlacesToDisplay` at 7 for a zero interval.
+    Gatecrasher had already hit and fixed exactly that, and wrote it down. Elmer hand-rolled an
+    `if`-chain per parameter ID, which looked right on the panel and left the host showing raw
+    floats — the same defect, hidden rather than absent.
+
+    **So a value that formats badly is fixed in the casting's `Parameters.h`, not here.** This
+    function cannot round or truncate: doing so would restore the disagreement it exists to prevent.
+
+    The unit comes from `getLabel()` and is appended with a space. A parameter that bakes its unit
+    into its text carries no label, so nothing is doubled — that is Reflect-84's arrangement, and it
+    works because the label is empty rather than because of a special case here.
+*/
+inline juce::String describeParameter (const juce::AudioProcessorParameter& param,
+                                       const ReadoutFormat& format = {})
+{
+    // The NAME is upper-cased and the VALUE is not. The name is a panel label, and every casting
+    // silk-screens it in caps; the value may contain a unit or an authored choice string.
+    auto text = param.getName (format.nameCharacterBudget).toUpperCase()
+              + (format.separatorColon ? ": " : " ")
+              + (format.uppercaseValue ? param.getText (param.getValue(), 0).toUpperCase()
+                                       : param.getText (param.getValue(), 0));
+
+    const auto unit = param.getLabel();
+
+    if (unit.isNotEmpty())
+        text += " " + unit;
+
+    return text;
+}
+
+/** The takeover's lifetime: what to show, and until when.
+
+    **It owns the deadline and nothing else.** The caller decides how to notice the deadline has
+    passed — four castings poll it from a repaint timer they already run, two use a one-shot
+    `juce::Timer` — and the caller does all the painting. Neither mechanism is wrong and forcing one
+    would mean rewriting a paint loop for no behavioural gain.
+
+    **Time is a parameter, never read from a clock inside.** That is what makes the revert testable
+    without sleeping, and it is why the tests here can assert the boundary at exactly 900 ms rather
+    than around it.
+*/
+class ReadoutTimer
+{
+public:
+    explicit ReadoutTimer (ReadoutFormat formatToUse = {}) : format (formatToUse) {}
+
+    /** Begins or refreshes the takeover, and cancels any pending revert.
+
+        **Called on every value change while a control is moved, not only on grab.** Reflect-84
+        wired only `onDragStart`, so its LCD showed the value the knob held at the instant it was
+        grabbed and never updated while turning — the takeover was live and simply frozen, which
+        reads as a stuck display rather than as a missing call. */
+    void show (juce::String textToShow)
+    {
+        text = std::move (textToShow);
+        deadlineMs = 0;                  // held: the control is still being moved
+    }
+
+    /** Arms the revert. The takeover stays up for `revertMs` from `nowMs`. */
+    void release (juce::uint32 nowMs)
+    {
+        if (text.isNotEmpty())
+            deadlineMs = nowMs + (juce::uint32) format.revertMs;
+    }
+
+    /** Clears the takeover immediately — **naming mode**.
+
+        The glass belongs to the name field until it commits or cancels, so a knob moved just before
+        SAVE must not reappear over a half-typed name. Five castings guarded the entry point; Elmer
+        relied on paint order instead, which hides the takeover without cancelling it, so it
+        returned the moment naming ended if the revert had not yet fired. */
+    void suppress()
+    {
+        text.clear();
+        deadlineMs = 0;
+    }
+
+    /** The text to paint at `nowMs`, or empty once the takeover has reverted. */
+    juce::String textAt (juce::uint32 nowMs) const
+    {
+        if (text.isEmpty())
+            return {};
+
+        // deadlineMs 0 means "held" - the control is still down, so it never expires on its own.
+        if (deadlineMs != 0 && nowMs >= deadlineMs)
+            return {};
+
+        return text;
+    }
+
+    bool isShowing (juce::uint32 nowMs) const { return textAt (nowMs).isNotEmpty(); }
+
+    /** For a caller driving a one-shot `juce::Timer` rather than polling. */
+    int revertMs() const noexcept { return format.revertMs; }
+
+    const ReadoutFormat& getFormat() const noexcept { return format; }
+
+private:
+    ReadoutFormat format;
+    juce::String text;
+    juce::uint32 deadlineMs = 0;
+};
+
+} // namespace nf
