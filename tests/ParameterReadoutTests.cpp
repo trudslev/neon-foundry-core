@@ -47,15 +47,15 @@ public:
 
             expectEquals (nf::describeParameter (*p), juce::String ("DAMPING HF: 4.8 kHz"));
 
-            // **A label is never upper-cased, even with the opt-in set.** uppercaseValue reaches
-            // getText() alone, and the label is appended afterwards - so a unit carried the way
-            // JUCE intends is safe from this flag by construction.
+            // **A label is never upper-cased, even under ValueCase::all.** The case transform
+            // reaches getText() alone and the label is appended afterwards - so a unit carried the
+            // way JUCE intends is safe from it by construction.
             nf::ReadoutFormat shouty;
-            shouty.uppercaseValue = true;
+            shouty.valueCase = nf::ReadoutFormat::ValueCase::all;
             expectEquals (nf::describeParameter (*p, shouty), juce::String ("DAMPING HF: 4.8 kHz"));
         }
 
-        beginTest ("uppercaseValue still reaches a unit BAKED INTO the value text");
+        beginTest ("ValueCase::all still reaches a unit BAKED INTO the value text");
         {
             // Which is exactly how Reflect-84 printed "DAMPING HF: 4.8 KHZ". Its units live inside
             // getText() rather than in getLabel(), so the flag reached them. Asserted here so the
@@ -72,7 +72,7 @@ public:
             expectEquals (nf::describeParameter (*p), juce::String ("DAMPING HF: 4.8 kHz"));
 
             nf::ReadoutFormat shouty;
-            shouty.uppercaseValue = true;
+            shouty.valueCase = nf::ReadoutFormat::ValueCase::all;
             expectEquals (nf::describeParameter (*p, shouty), juce::String ("DAMPING HF: 4.8 KHZ"));
         }
 
@@ -109,6 +109,45 @@ public:
                                               { "Soft", "Hard" }, 0 };
 
             expectEquals (nf::describeParameter (knee), juce::String ("KNEE: Soft"));
+        }
+
+        beginTest ("wordsOnly upper-cases a choice name and leaves a reading alone");
+        {
+            // TapeRot's and Gatecrasher's rule, with near-identical comments in both: a value with
+            // no unit and no digit is a WORD and gets the name's treatment, while a reading keeps
+            // its case because any letters in it belong to a unit.
+            nf::ReadoutFormat words;
+            words.valueCase = nf::ReadoutFormat::ValueCase::wordsOnly;
+
+            juce::AudioParameterChoice algorithm { juce::ParameterID { "alg", 1 }, "Algorithm",
+                                                   { "Plate", "Hall" }, 0 };
+            expectEquals (nf::describeParameter (algorithm, words),
+                          juce::String ("ALGORITHM: PLATE"));
+
+            // A reading with a label: untouched, because the unit disqualifies it.
+            auto withUnit = makeFloat ("thr", "Threshold", { -40.0f, 10.0f, 0.1f }, -18.5f,
+                                       juce::AudioParameterFloatAttributes().withLabel ("dB"));
+            expectEquals (nf::describeParameter (*withUnit, words),
+                          juce::String ("THRESHOLD: -18.5 dB"));
+
+            // A reading with the unit BAKED IN and no label: untouched, because it has digits.
+            // This is the case that would otherwise reproduce Reflect-84's "4.6 S".
+            auto baked = makeFloat ("decay", "Decay", { 0.4f, 8.0f, 0.1f }, 4.6f,
+                                    juce::AudioParameterFloatAttributes()
+                                        .withStringFromValueFunction ([] (float v, int)
+                                        {
+                                            return juce::String (v, 1) + " s";
+                                        }));
+            expectEquals (nf::describeParameter (*baked, words), juce::String ("DECAY: 4.6 s"));
+        }
+
+        beginTest ("asAuthored is the default and changes nothing");
+        {
+            juce::AudioParameterChoice knee { juce::ParameterID { "knee", 1 }, "Knee",
+                                              { "Soft", "Hard" }, 0 };
+
+            expectEquals (nf::describeParameter (knee), juce::String ("KNEE: Soft"));
+            expect (nf::ReadoutFormat{}.valueCase == nf::ReadoutFormat::ValueCase::asAuthored);
         }
 
         beginTest ("A range with NO interval renders at seven decimal places");

@@ -17,24 +17,43 @@ struct ReadoutFormat
         legitimate divergence; everything else here is drift. */
     bool separatorColon = true;
 
-    /** **Leave this false.** It exists only so the one casting that wants it has to say so, in a
-        place where this comment is attached to the decision.
+    /** How the VALUE half is cased. The name half is always upper-cased - every casting
+        silk-screens its control names in caps.
 
-        Elmer's source got the reasoning right first: *"A capital S is a different unit from a
-        lowercase one."* Upper-casing the value text reaches the unit whenever the unit is baked
-        into that text rather than carried in `getLabel()` — Reflect-84 printed `DAMPING HF: 4.8
-        KHZ`, `DECAY: 4.6 S` and `OUTPUT TRIM: +2.5 DB` that way, and `KHZ` is not a unit at all.
-        It also reaches a choice parameter's authored strings, so `Soft` became `SOFT`.
+        **Two castings independently arrived at `wordsOnly` and one argues explicitly against it**,
+        so this is a real disagreement with reasoning on both sides rather than drift, and core
+        carries both rather than picking:
 
-        If a display should read `SOFT`, author the choice that way in the casting's `Parameters.h`
-        so the host's automation lane agrees. Re-casing it here makes the two disagree again by
-        exactly this route.
+        - TapeRot and Gatecrasher upper-case a value that carries no unit and contains no digit,
+          on the grounds that such a value is a WORD and should get the name's treatment -
+          `ALGORITHM: PLATE` beside `THRESHOLD: -18.5 dB`. Their comments are near-identical.
+        - Elmer's source says the opposite and the argument is sharp: *"If the display should say
+          SOFT, author the choice that way in Parameters.h so the host's automation lane agrees -
+          do not re-case it here, or the two disagree again by exactly this route."* That is the
+          same failure this whole extraction exists to prevent, one level down.
 
-        **It reaches `getText()` only — a `getLabel()` unit is never touched.** So the flag is
-        harmless for a unit carried the way JUCE intends and harmful for one baked into the value
-        text, and a casting cannot tell which it has without looking. That asymmetry is asserted in
-        the tests rather than left to be discovered. */
-    bool uppercaseValue = false;
+        Whichever a casting picks, it states it here, where both arguments are written down. */
+    enum class ValueCase
+    {
+        /** Exactly what the parameter's own `getText` returned. */
+        asAuthored,
+
+        /** Upper-cased only when the value carries no unit and contains no digit - i.e. when it is
+            a choice name rather than a reading. A number has no case to change, and any letters in
+            it belong to a unit. */
+        wordsOnly,
+
+        /** Upper-cased unconditionally.
+
+            **This is the one that was a bug.** Reflect-84 used it and printed `DAMPING HF: 4.8
+            KHZ`, `DECAY: 4.6 S` and `OUTPUT TRIM: +2.5 DB`, because its units are baked into the
+            value text rather than carried in `getLabel()`. `KHZ` is not a unit and a capital S is a
+            different unit from a lowercase one. Kept available and named plainly so that choosing
+            it is a decision somebody made, not something that happened. */
+        all
+    };
+
+    ValueCase valueCase = ValueCase::asAuthored;
 
     /** **900 ms, and the number is single-sourced here rather than being a plurality vote.**
 
@@ -73,12 +92,29 @@ inline juce::String describeParameter (const juce::AudioProcessorParameter& para
 {
     // The NAME is upper-cased and the VALUE is not. The name is a panel label, and every casting
     // silk-screens it in caps; the value may contain a unit or an authored choice string.
+    const auto unit = param.getLabel();
+    auto value = param.getText (param.getValue(), 0);
+
+    switch (format.valueCase)
+    {
+        case ReadoutFormat::ValueCase::all:
+            value = value.toUpperCase();
+            break;
+
+        case ReadoutFormat::ValueCase::wordsOnly:
+            // A unitless, digit-free value is a choice name rather than a reading.
+            if (unit.isEmpty() && ! value.containsAnyOf ("0123456789"))
+                value = value.toUpperCase();
+            break;
+
+        case ReadoutFormat::ValueCase::asAuthored:
+        default:
+            break;
+    }
+
     auto text = param.getName (format.nameCharacterBudget).toUpperCase()
               + (format.separatorColon ? ": " : " ")
-              + (format.uppercaseValue ? param.getText (param.getValue(), 0).toUpperCase()
-                                       : param.getText (param.getValue(), 0));
-
-    const auto unit = param.getLabel();
+              + value;
 
     if (unit.isNotEmpty())
         text += " " + unit;
