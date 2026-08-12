@@ -208,6 +208,60 @@ public:
             expectEquals (timer.textAt (1000), juce::String());
         }
 
+        //==============================================================================
+        beginTest ("readoutDefects catches the seven-place default and passes a formatted value");
+        {
+            auto bad = makeFloat ("drive", "Drive", { 0.0f, 100.0f }, 20.0f,
+                                  juce::AudioParameterFloatAttributes().withLabel ("%"));
+
+            const auto defects = nf::readoutDefects (*bad);
+            expect (! defects.isEmpty(), "a 7-place value was not reported");
+            expect (defects[0].contains ("decimal places"), defects[0]);
+
+            auto good = makeFloat ("drive", "Drive", { 0.0f, 100.0f, 0.1f }, 20.0f,
+                                   juce::AudioParameterFloatAttributes().withLabel ("%"));
+            expect (nf::readoutDefects (*good).isEmpty());
+        }
+
+        beginTest ("readoutDefects catches a unit that would print twice");
+        {
+            // The other half of the same mistake: a formatter that bakes the unit in, on a
+            // parameter that also carries a label, gives "4.8 kHz kHz".
+            auto p = makeFloat ("damp", "Damping", { 0.0f, 20.0f, 0.1f }, 4.8f,
+                                juce::AudioParameterFloatAttributes()
+                                    .withLabel ("kHz")
+                                    .withStringFromValueFunction ([] (float v, int)
+                                    {
+                                        return juce::String (v, 1) + " kHz";
+                                    }));
+
+            const auto defects = nf::readoutDefects (*p);
+            expect (! defects.isEmpty(), "a doubled unit was not reported");
+            expect (defects[0].contains ("twice"), defects[0]);
+            expectEquals (nf::describeParameter (*p), juce::String ("DAMPING: 4.8 kHz kHz"));
+        }
+
+        beginTest ("readoutDefects passes a baked unit with NO label");
+        {
+            // Reflect-84's arrangement, which is fine: the unit is in the text and the label is
+            // empty, so nothing doubles. The check must not flag it.
+            auto p = makeFloat ("decay", "Decay", { 0.4f, 8.0f, 0.1f }, 4.6f,
+                                juce::AudioParameterFloatAttributes()
+                                    .withStringFromValueFunction ([] (float v, int)
+                                    {
+                                        return juce::String (v, 1) + " s";
+                                    }));
+
+            expect (nf::readoutDefects (*p).isEmpty());
+        }
+
+        beginTest ("readoutDefects passes a choice parameter");
+        {
+            juce::AudioParameterChoice knee { juce::ParameterID { "knee", 1 }, "Knee",
+                                              { "Soft", "Hard" }, 0 };
+            expect (nf::readoutDefects (knee).isEmpty());
+        }
+
         beginTest ("A non-default revertMs is honoured");
         {
             nf::ReadoutFormat slow;

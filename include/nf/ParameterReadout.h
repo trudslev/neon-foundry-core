@@ -86,6 +86,73 @@ inline juce::String describeParameter (const juce::AudioProcessorParameter& para
     return text;
 }
 
+/** Everything wrong with how a parameter would print on an LCD, or an empty array.
+
+    **This is the part that stops the defect class rather than today's instances.** Extracting
+    `describeParameter` fixes the six castings that exist; it does nothing about the next parameter
+    somebody adds without an interval, which is exactly how TapeRot got there — its formatters were
+    not deleted, they were never written, one parameter at a time.
+
+    Intended to be called from each casting's own test target over its whole parameter layout, so a
+    parameter that would print badly fails a build instead of a panel. What it looks for:
+
+    - **A run of three or more decimal digits.** The signature of JUCE's 7-place default: a
+      `NormalisableRange` with a zero interval and no `stringFromValueFunction` renders 20 as
+      `20.0000000`. Three is the threshold rather than four because no control on any panel in this
+      suite is legible to a thousandth, so a real value never reaches it.
+    - **A unit in the value text AND a label**, which prints the unit twice.
+    - **An empty value**, which is a formatter returning nothing rather than a value of nothing.
+
+    It deliberately does NOT check the name budget: eliding a long name is `getName`'s job and a
+    casting may legitimately have a name longer than its cell.
+
+    @param param   the parameter to check, at its current value
+    @param format  the casting's own readout spelling
+*/
+inline juce::StringArray readoutDefects (const juce::AudioProcessorParameter& param,
+                                         const ReadoutFormat& format = {})
+{
+    juce::StringArray defects;
+
+    const auto value = param.getText (param.getValue(), 0);
+    const auto label = param.getLabel();
+
+    if (value.isEmpty())
+    {
+        defects.add ("value text is empty");
+        return defects;   // nothing further is meaningful
+    }
+
+    // A run of >= 3 digits after a decimal point. Walked rather than matched with a regex, because
+    // juce::String has no regex and pulling in <regex> for this would cost more than it saves.
+    for (int i = 0; i < value.length() - 3; ++i)
+    {
+        if (value[i] != '.')
+            continue;
+
+        int digits = 0;
+
+        while (i + 1 + digits < value.length()
+               && juce::CharacterFunctions::isDigit (value[i + 1 + digits]))
+            ++digits;
+
+        if (digits >= 3)
+        {
+            defects.add ("value \"" + value + "\" has " + juce::String (digits)
+                         + " decimal places - the range probably has no interval and the parameter "
+                           "no stringFromValueFunction, so JUCE is printing at its 7-place default");
+            break;
+        }
+    }
+
+    if (label.isNotEmpty() && value.endsWith (label))
+        defects.add ("value \"" + value + "\" already ends with the label \"" + label
+                     + "\", so the unit would print twice");
+
+    juce::ignoreUnused (format);
+    return defects;
+}
+
 /** The takeover's lifetime: what to show, and until when.
 
     **It owns the deadline and nothing else.** The caller decides how to notice the deadline has
