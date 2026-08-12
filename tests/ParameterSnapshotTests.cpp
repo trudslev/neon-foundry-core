@@ -2,6 +2,9 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <atomic>
+#include <thread>
+
 namespace
 {
     /** The smallest processor that can hold parameters. Deliberately not a casting's: the point is
@@ -151,6 +154,55 @@ public:
             snapshot.capture (proc);
 
             expect (! snapshot.differsFrom (proc, juce::StringArray { "not-a-parameter" }));
+        }
+
+        beginTest ("Capturing on one thread while comparing on another does not corrupt the baseline");
+        {
+            // **setStateInformation carries no thread guarantee from JUCE**, and it writes the
+            // baseline while the panel polls the dirty flag on the message thread to decide whether
+            // SAVE is lit. TapeRot and Elmer both guarded their own copies; Chorus-60 and
+            // Gatecrasher read and wrote a plain std::vector<float> across threads.
+            //
+            // Unguarded, this case reliably crashes rather than merely reading a stale value -
+            // differsFrom walks the map while capture is rehashing it. That is what makes it worth
+            // writing as a test at all: without a sanitiser a race usually proves nothing, and this
+            // one fails loudly.
+            StubProcessor proc;
+            nf::ParameterSnapshot snapshot;
+            snapshot.capture (proc);
+
+            std::atomic<bool> stop { false };
+            std::atomic<int> captures { 0 };
+
+            std::thread writer ([&]
+            {
+                while (! stop.load())
+                {
+                    snapshot.capture (proc);
+                    captures.fetch_add (1);
+                }
+            });
+
+            int reads = 0;
+
+            for (int i = 0; i < 20000; ++i)
+            {
+                // The value moves under the reader too, so the answer is legitimately either - the
+                // assertion is that asking is safe, not what it says.
+                proc.byID ("drive")->setValue (i % 2 == 0 ? 0.1f : 0.9f);
+                snapshot.differsFrom (proc);
+                ++reads;
+            }
+
+            stop.store (true);
+            writer.join();
+
+            expectEquals (reads, 20000);
+            expectGreaterThan (captures.load(), 0);
+
+            // And the snapshot is still usable afterwards, rather than left in a torn state.
+            snapshot.capture (proc);
+            expect (! snapshot.differsFrom (proc));
         }
     }
 };

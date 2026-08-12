@@ -22,6 +22,19 @@ namespace nf
 
     **Values are normalised 0..1**, so one epsilon is meaningful for every parameter regardless of
     its real-world range.
+
+    **Thread-safe, and that is not belt-and-braces.** `setStateInformation` carries no thread
+    guarantee from JUCE and writes the baseline; the panel polls the dirty flag on the message
+    thread to decide whether SAVE is lit and whether the LCD shows its asterisk. TapeRot and Elmer
+    both identified that and guarded their own copies with a `SpinLock`; Chorus-60 and Gatecrasher
+    did not, and had a plain `std::vector<float>` read and written across threads. That is the
+    suite's recurring shape exactly — a fix landing where the bug was noticed and nothing carrying
+    it sideways — so the guard lives here now and all six get it by consuming core.
+
+    A `SpinLock` rather than a mutex because it never allocates and contention is near-zero: the
+    baseline is written only on a Program change or a session restore. **Nothing here runs on the
+    audio thread** — JUCE calls neither `setStateInformation` nor a panel repaint from it — so
+    spinning cannot stall a render.
 */
 class ParameterSnapshot
 {
@@ -51,11 +64,17 @@ public:
     */
     void capture (const juce::AudioProcessor& processor)
     {
-        values.clear();
+        // Built OUTSIDE the lock and swapped in, so the time held is a pointer swap rather than a
+        // walk of every parameter. It also means a reader never sees a half-filled baseline, which
+        // a clear()-then-fill under the lock would still expose to anyone holding it briefly.
+        std::map<juce::String, float> fresh;
 
         for (const auto* p : processor.getParameters())
             if (const auto* withID = dynamic_cast<const juce::AudioProcessorParameterWithID*> (p))
-                values[withID->paramID] = withID->getValue();
+                fresh[withID->paramID] = withID->getValue();
+
+        const juce::SpinLock::ScopedLockType lock (mutex);
+        values = std::move (fresh);
     }
 
     /** True when any parameter differs from the baseline by more than `epsilon`.
@@ -66,6 +85,8 @@ public:
     bool differsFrom (const juce::AudioProcessor& processor,
                       const ExclusionPredicate& isExcluded = {}) const
     {
+        const juce::SpinLock::ScopedLockType lock (mutex);
+
         if (values.empty())
             return false;   // nothing captured yet: no baseline to differ from
 
@@ -103,6 +124,8 @@ public:
     bool differsFrom (const juce::AudioProcessor& processor,
                       const juce::StringArray& parameterIDs) const
     {
+        const juce::SpinLock::ScopedLockType lock (mutex);
+
         if (values.empty())
             return false;
 
@@ -121,7 +144,11 @@ public:
         return false;
     }
 
-    bool isEmpty() const noexcept { return values.empty(); }
+    bool isEmpty() const
+    {
+        const juce::SpinLock::ScopedLockType lock (mutex);
+        return values.empty();
+    }
 
     /** **1e-4 in normalised space**, and the figure is load-bearing in both directions.
 
@@ -143,6 +170,7 @@ private:
         return nullptr;
     }
 
+    mutable juce::SpinLock mutex;
     std::map<juce::String, float> values;
 };
 
