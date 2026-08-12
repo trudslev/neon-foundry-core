@@ -49,7 +49,12 @@ target_include_directories(neon_foundry_core PUBLIC
 # de-duplicate.
 target_link_libraries(neon_foundry_core PUBLIC
     juce::juce_core
-    juce::juce_audio_processors)
+    juce::juce_audio_processors
+    # juce_gui_basics is for nf/MenuMetrics.h, which derives from LookAndFeel_V4. Every casting
+    # already links it - a plugin with an editor cannot not - so this adds no dependency any
+    # consumer did not already have. Core still draws nothing: MenuMetrics owns sizes and leaves
+    # every draw* alone.
+    juce::juce_gui_basics)
 
 # Core carries NO company or product identity. Those are the casting's, passed in as arguments —
 # see UserProgramDirectory.h. A shared default here would be exactly the hand-synced constant that

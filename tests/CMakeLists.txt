@@ -7,7 +7,8 @@ target_sources(NeonFoundryCoreTests PRIVATE
     ProgramIdTests.cpp
     ParameterSnapshotTests.cpp
     UserProgramStoreTests.cpp
-    ParameterReadoutTests.cpp)
+    ParameterReadoutTests.cpp
+    MenuMetricsTests.cpp)
 
 target_compile_definitions(NeonFoundryCoreTests PRIVATE
     JUCE_WEB_BROWSER=0
@@ -18,6 +19,7 @@ target_link_libraries(NeonFoundryCoreTests PRIVATE
     neon_foundry_core
     juce::juce_core
     juce::juce_events
+    juce::juce_gui_basics
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
 
