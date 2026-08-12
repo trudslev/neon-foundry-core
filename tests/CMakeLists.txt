@@ -8,7 +8,8 @@ target_sources(NeonFoundryCoreTests PRIVATE
     ParameterSnapshotTests.cpp
     UserProgramStoreTests.cpp
     ParameterReadoutTests.cpp
-    MenuMetricsTests.cpp)
+    MenuMetricsTests.cpp
+    PrintedScaleTests.cpp)
 
 target_compile_definitions(NeonFoundryCoreTests PRIVATE
     JUCE_WEB_BROWSER=0
