@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 
 # The version a casting pins. Bump it when core changes; a casting moves when it chooses to, which
 # is the whole point of the pin — nothing here can force a release on a plugin that is mid-cycle.
-project(NeonFoundryCore VERSION 0.1.0 LANGUAGES CXX)
+project(NeonFoundryCore VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
