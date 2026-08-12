@@ -5,7 +5,8 @@ juce_add_console_app(NeonFoundryCoreTests PRODUCT_NAME "NeonFoundryCoreTests")
 target_sources(NeonFoundryCoreTests PRIVATE
     UserProgramDirectoryTests.cpp
     ProgramIdTests.cpp
-    ParameterSnapshotTests.cpp)
+    ParameterSnapshotTests.cpp
+    UserProgramStoreTests.cpp)
 
 target_compile_definitions(NeonFoundryCoreTests PRIVATE
     JUCE_WEB_BROWSER=0
