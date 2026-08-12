@@ -2,7 +2,9 @@
 # the same condition that adds this directory. Nothing here fetches anything.
 juce_add_console_app(NeonFoundryCoreTests PRODUCT_NAME "NeonFoundryCoreTests")
 
-target_sources(NeonFoundryCoreTests PRIVATE UserProgramDirectoryTests.cpp)
+target_sources(NeonFoundryCoreTests PRIVATE
+    UserProgramDirectoryTests.cpp
+    ProgramIdTests.cpp)
 
 target_compile_definitions(NeonFoundryCoreTests PRIVATE
     JUCE_WEB_BROWSER=0
