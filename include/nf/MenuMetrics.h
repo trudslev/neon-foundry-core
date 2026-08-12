@@ -36,6 +36,10 @@ struct MenuMetrics
     */
     int sectionHeaderHeight = 36;
 
+    /* The default above is JUCE's own rule and is deliberately the WRONG answer for this suite - it
+       is what a casting gets by saying nothing, and saying nothing is the thing being fixed. Set it
+       from `captionHeight()` instead. */
+
     int separatorHeight = 9;
 
     /** Space above the first row and below the last. JUCE's default is 2; Elmer's spec asks for 4. */
@@ -48,6 +52,35 @@ struct MenuMetrics
     /** JUCE asks a separator for a width too, and it must not be the widest thing in the list. */
     int minimumSeparatorWidth = 50;
 };
+
+/** The height a section caption takes: its padding plus the line box its own type produces.
+
+    **The construction, not the number — and that distinction is the whole ruling.** Every casting
+    that uses this currently lands on 19, and *that is a coincidence*: Share Tech Mono's line box is
+    1.127 em against IBM Plex Mono's 1.300, and 11px of the former plus 9px of the latter happen to
+    meet once the padding is added. Written as a literal `19` in five themes, the construction would
+    be lost and the first font or type-size change would silently break the rule — which is exactly
+    how the caption came to inherit JUCE's `rowHeight + rowHeight / 2` in the first place.
+
+    So a casting states its padding and its caption font, and the number falls out. A theme that
+    later changes its caption type gets a correct caption without anyone noticing they needed to.
+
+    **`juce::Font::getHeight()` is the CSS `normal` line box** for a font built with
+    `FontOptions::withPointHeight`, which is how every casting here builds one: JUCE defines height
+    as ascent + descent scaled to the em size, and CSS `normal` is
+    `(ascender − descender + lineGap) / unitsPerEm`. The two agree exactly while `lineGap` is zero,
+    which it is for both faces in this suite — Plex Mono 1025/−275/0 and Share Tech Mono 885/−242/0.
+    A face with a non-zero line gap would need that gap added here, and this is the comment that
+    should be read before assuming it does not.
+
+    @param captionFont    the font the caption is actually drawn in, not a nominal size
+    @param topPadding     above the line box
+    @param bottomPadding  below it
+*/
+inline int captionHeight (const juce::Font& captionFont, int topPadding, int bottomPadding)
+{
+    return juce::roundToInt ((float) topPadding + captionFont.getHeight() + (float) bottomPadding);
+}
 
 /** A `LookAndFeel_V4` that owns the Program dropdown's metrics and nothing else.
 
