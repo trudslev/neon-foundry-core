@@ -42,7 +42,14 @@ target_include_directories(neon_foundry_core PUBLIC
 
 # PUBLIC, not PRIVATE: the header takes and returns juce::File, so anything including it needs
 # juce_core's include paths too.
-target_link_libraries(neon_foundry_core PUBLIC juce::juce_core)
+# juce_audio_processors arrived with ParameterSnapshot, which reads live parameter values off an
+# AudioProcessor. That is a real step up in weight from juce_core alone, and it is the right one:
+# the Program model this is being extracted towards manipulates an APVTS throughout, so a core that
+# could not see a parameter would push every interesting piece back to the callers it exists to
+# de-duplicate.
+target_link_libraries(neon_foundry_core PUBLIC
+    juce::juce_core
+    juce::juce_audio_processors)
 
 # Core carries NO company or product identity. Those are the casting's, passed in as arguments —
 # see UserProgramDirectory.h. A shared default here would be exactly the hand-synced constant that
