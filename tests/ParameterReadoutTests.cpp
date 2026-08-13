@@ -32,7 +32,7 @@ public:
     {
         beginTest ("The name is upper-cased, the value is not, and the unit comes from the label");
         {
-            auto p = makeFloat ("release", "Release", { 0.0f, 10.0f, 0.1f }, 2.5f,
+            auto p = makeFloat ("release", "RELEASE", { 0.0f, 10.0f, 0.1f }, 2.5f,
                                 juce::AudioParameterFloatAttributes().withLabel ("s"));
 
             expectEquals (nf::describeParameter (*p), juce::String ("RELEASE: 2.5 s"));
@@ -42,46 +42,21 @@ public:
         {
             // Elmer's source got this right first and Reflect-84 had it wrong: upper-casing the
             // value reaches the unit, and "4.8 KHZ" is not a unit at all.
-            auto p = makeFloat ("damp", "Damping HF", { 0.0f, 20.0f, 0.1f }, 4.8f,
+            auto p = makeFloat ("damp", "DAMPING HF", { 0.0f, 20.0f, 0.1f }, 4.8f,
                                 juce::AudioParameterFloatAttributes().withLabel ("kHz"));
 
             expectEquals (nf::describeParameter (*p), juce::String ("DAMPING HF: 4.8 kHz"));
 
-            // **A label is never upper-cased, even under ValueCase::all.** The case transform
-            // reaches getText() alone and the label is appended afterwards - so a unit carried the
-            // way JUCE intends is safe from it by construction.
-            nf::ReadoutFormat shouty;
-            shouty.valueCase = nf::ReadoutFormat::ValueCase::all;
-            expectEquals (nf::describeParameter (*p, shouty), juce::String ("DAMPING HF: 4.8 kHz"));
+
         }
 
-        beginTest ("ValueCase::all still reaches a unit BAKED INTO the value text");
-        {
-            // Which is exactly how Reflect-84 printed "DAMPING HF: 4.8 KHZ". Its units live inside
-            // getText() rather than in getLabel(), so the flag reached them. Asserted here so the
-            // flag's real blast radius is written down rather than assumed to be narrow: it is safe
-            // for a label and unsafe for a baked unit, and a casting cannot tell which it has
-            // without looking.
-            auto p = makeFloat ("damp", "Damping HF", { 0.0f, 20.0f, 0.1f }, 4.8f,
-                                juce::AudioParameterFloatAttributes()
-                                    .withStringFromValueFunction ([] (float v, int)
-                                    {
-                                        return juce::String (v, 1) + " kHz";
-                                    }));
-
-            expectEquals (nf::describeParameter (*p), juce::String ("DAMPING HF: 4.8 kHz"));
-
-            nf::ReadoutFormat shouty;
-            shouty.valueCase = nf::ReadoutFormat::ValueCase::all;
-            expectEquals (nf::describeParameter (*p, shouty), juce::String ("DAMPING HF: 4.8 KHZ"));
-        }
 
         beginTest ("A parameter with no label gets no trailing space");
         {
             // Reflect-84's arrangement: the unit is baked into the value text and the label is
             // empty, so nothing is doubled. That works because the label is empty, not because of a
             // special case in describeParameter.
-            auto p = makeFloat ("trim", "Output Trim", { -24.0f, 24.0f, 0.1f }, 2.5f,
+            auto p = makeFloat ("trim", "OUTPUT TRIM", { -24.0f, 24.0f, 0.1f }, 2.5f,
                                 juce::AudioParameterFloatAttributes()
                                     .withStringFromValueFunction ([] (float v, int)
                                     {
@@ -94,7 +69,7 @@ public:
 
         beginTest ("Elmer's colon-free spelling is the one legitimate divergence");
         {
-            auto p = makeFloat ("iron", "Iron", { 0.0f, 100.0f, 0.1f }, 40.0f,
+            auto p = makeFloat ("iron", "IRON", { 0.0f, 100.0f, 0.1f }, 40.0f,
                                 juce::AudioParameterFloatAttributes().withLabel ("%"));
 
             nf::ReadoutFormat noColon;
@@ -105,49 +80,29 @@ public:
 
         beginTest ("A choice parameter prints its authored string, un-recased");
         {
-            juce::AudioParameterChoice knee { juce::ParameterID { "knee", 1 }, "Knee",
+            juce::AudioParameterChoice knee { juce::ParameterID { "knee", 1 }, "KNEE",
                                               { "Soft", "Hard" }, 0 };
 
             expectEquals (nf::describeParameter (knee), juce::String ("KNEE: Soft"));
         }
 
-        beginTest ("wordsOnly upper-cases a choice name and leaves a reading alone");
+
+        beginTest ("Nothing is re-cased - neither the value nor the name");
         {
-            // TapeRot's and Gatecrasher's rule, with near-identical comments in both: a value with
-            // no unit and no digit is a WORD and gets the name's treatment, while a reading keeps
-            // its case because any letters in it belong to a unit.
-            nf::ReadoutFormat words;
-            words.valueCase = nf::ReadoutFormat::ValueCase::wordsOnly;
-
-            juce::AudioParameterChoice algorithm { juce::ParameterID { "alg", 1 }, "Algorithm",
-                                                   { "Plate", "Hall" }, 0 };
-            expectEquals (nf::describeParameter (algorithm, words),
-                          juce::String ("ALGORITHM: PLATE"));
-
-            // A reading with a label: untouched, because the unit disqualifies it.
-            auto withUnit = makeFloat ("thr", "Threshold", { -40.0f, 10.0f, 0.1f }, -18.5f,
-                                       juce::AudioParameterFloatAttributes().withLabel ("dB"));
-            expectEquals (nf::describeParameter (*withUnit, words),
-                          juce::String ("THRESHOLD: -18.5 dB"));
-
-            // A reading with the unit BAKED IN and no label: untouched, because it has digits.
-            // This is the case that would otherwise reproduce Reflect-84's "4.6 S".
-            auto baked = makeFloat ("decay", "Decay", { 0.4f, 8.0f, 0.1f }, 4.6f,
-                                    juce::AudioParameterFloatAttributes()
-                                        .withStringFromValueFunction ([] (float v, int)
-                                        {
-                                            return juce::String (v, 1) + " s";
-                                        }));
-            expectEquals (nf::describeParameter (*baked, words), juce::String ("DECAY: 4.6 s"));
-        }
-
-        beginTest ("asAuthored is the default and changes nothing");
-        {
-            juce::AudioParameterChoice knee { juce::ParameterID { "knee", 1 }, "Knee",
+            // **Case belongs at the source.** ValueCase is gone, and the name is not upper-cased
+            // either: parameter names are authored in caps in each casting's Parameters.h, so the
+            // panel and the host's automation lane print the same string. Re-casing here would make
+            // this the only site that did - which is the failure the ruling generalises from
+            // Program names.
+            juce::AudioParameterChoice knee { juce::ParameterID { "knee", 1 }, "KNEE",
                                               { "Soft", "Hard" }, 0 };
 
             expectEquals (nf::describeParameter (knee), juce::String ("KNEE: Soft"));
-            expect (nf::ReadoutFormat{}.valueCase == nf::ReadoutFormat::ValueCase::asAuthored);
+
+            juce::AudioParameterChoice authored { juce::ParameterID { "k2", 1 }, "KNEE",
+                                                  { "SOFT", "HARD" }, 0 };
+
+            expectEquals (nf::describeParameter (authored), juce::String ("KNEE: SOFT"));
         }
 
         beginTest ("A range with NO interval renders at seven decimal places");
@@ -165,13 +120,13 @@ public:
             // describeParameter deliberately does NOT round this away: doing so would restore the
             // panel/host disagreement it exists to prevent. The fix belongs in the casting's
             // Parameters.h, and this test is what says so out loud.
-            auto p = makeFloat ("drive", "Drive", { 0.0f, 100.0f }, 20.0f,
+            auto p = makeFloat ("drive", "DRIVE", { 0.0f, 100.0f }, 20.0f,
                                 juce::AudioParameterFloatAttributes().withLabel ("%"));
 
             expectEquals (nf::describeParameter (*p), juce::String ("DRIVE: 20.0000000 %"));
 
             // The same parameter with an interval, which is what a casting should give it.
-            auto fixed = makeFloat ("drive", "Drive", { 0.0f, 100.0f, 0.1f }, 20.0f,
+            auto fixed = makeFloat ("drive", "DRIVE", { 0.0f, 100.0f, 0.1f }, 20.0f,
                                     juce::AudioParameterFloatAttributes().withLabel ("%"));
 
             expectEquals (nf::describeParameter (*fixed), juce::String ("DRIVE: 20.0 %"));
@@ -179,7 +134,7 @@ public:
 
         beginTest ("A long name is elided to the character budget, not overrun");
         {
-            auto p = makeFloat ("x", "Sidechain High Pass Filter", { 0.0f, 1.0f, 0.01f }, 0.5f,
+            auto p = makeFloat ("x", "SIDECHAIN HIGH PASS FILTER", { 0.0f, 1.0f, 0.01f }, 0.5f,
                                 juce::AudioParameterFloatAttributes());
 
             nf::ReadoutFormat narrow;
@@ -250,14 +205,14 @@ public:
         //==============================================================================
         beginTest ("readoutDefects catches the seven-place default and passes a formatted value");
         {
-            auto bad = makeFloat ("drive", "Drive", { 0.0f, 100.0f }, 20.0f,
+            auto bad = makeFloat ("drive", "DRIVE", { 0.0f, 100.0f }, 20.0f,
                                   juce::AudioParameterFloatAttributes().withLabel ("%"));
 
             const auto defects = nf::readoutDefects (*bad);
             expect (! defects.isEmpty(), "a 7-place value was not reported");
             expect (defects[0].contains ("decimal places"), defects[0]);
 
-            auto good = makeFloat ("drive", "Drive", { 0.0f, 100.0f, 0.1f }, 20.0f,
+            auto good = makeFloat ("drive", "DRIVE", { 0.0f, 100.0f, 0.1f }, 20.0f,
                                    juce::AudioParameterFloatAttributes().withLabel ("%"));
             expect (nf::readoutDefects (*good).isEmpty());
         }
@@ -266,7 +221,7 @@ public:
         {
             // The other half of the same mistake: a formatter that bakes the unit in, on a
             // parameter that also carries a label, gives "4.8 kHz kHz".
-            auto p = makeFloat ("damp", "Damping", { 0.0f, 20.0f, 0.1f }, 4.8f,
+            auto p = makeFloat ("damp", "DAMPING", { 0.0f, 20.0f, 0.1f }, 4.8f,
                                 juce::AudioParameterFloatAttributes()
                                     .withLabel ("kHz")
                                     .withStringFromValueFunction ([] (float v, int)
@@ -284,7 +239,7 @@ public:
         {
             // Reflect-84's arrangement, which is fine: the unit is in the text and the label is
             // empty, so nothing doubles. The check must not flag it.
-            auto p = makeFloat ("decay", "Decay", { 0.4f, 8.0f, 0.1f }, 4.6f,
+            auto p = makeFloat ("decay", "DECAY", { 0.4f, 8.0f, 0.1f }, 4.6f,
                                 juce::AudioParameterFloatAttributes()
                                     .withStringFromValueFunction ([] (float v, int)
                                     {
@@ -296,7 +251,7 @@ public:
 
         beginTest ("readoutDefects passes a choice parameter");
         {
-            juce::AudioParameterChoice knee { juce::ParameterID { "knee", 1 }, "Knee",
+            juce::AudioParameterChoice knee { juce::ParameterID { "knee", 1 }, "KNEE",
                                               { "Soft", "Hard" }, 0 };
             expect (nf::readoutDefects (knee).isEmpty());
         }

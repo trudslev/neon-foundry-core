@@ -17,43 +17,21 @@ struct ReadoutFormat
         legitimate divergence; everything else here is drift. */
     bool separatorColon = true;
 
-    /** How the VALUE half is cased. The name half is always upper-cased - every casting
-        silk-screens its control names in caps.
+    /* **There is no value-casing option, deliberately.** `ValueCase` lived here with three modes
+       and is gone: case belongs at the SOURCE, never at a display site.
 
-        **Two castings independently arrived at `wordsOnly` and one argues explicitly against it**,
-        so this is a real disagreement with reasoning on both sides rather than drift, and core
-        carries both rather than picking:
+       The ruling generalises one already in BRAND.md for Program names. TapeRot and Gatecrasher
+       stored Title Case factory names and upper-cased only at the LCD, so the same Program read
+       `01 WARM CASSETTE` on the glass and `01 Warm Cassette` in the list beneath it; the fix was
+       to uppercase the STORED names so all three consumers agree, the host's own preset menu
+       included. A choice value is the same shape with the host's automation lane as the third
+       consumer.
 
-        - TapeRot and Gatecrasher upper-case a value that carries no unit and contains no digit,
-          on the grounds that such a value is a WORD and should get the name's treatment -
-          `ALGORITHM: PLATE` beside `THRESHOLD: -18.5 dB`. Their comments are near-identical.
-        - Elmer's source says the opposite and the argument is sharp: *"If the display should say
-          SOFT, author the choice that way in Parameters.h so the host's automation lane agrees -
-          do not re-case it here, or the two disagree again by exactly this route."* That is the
-          same failure this whole extraction exists to prevent, one level down.
-
-        Whichever a casting picks, it states it here, where both arguments are written down. */
-    enum class ValueCase
-    {
-        /** Exactly what the parameter's own `getText` returned. */
-        asAuthored,
-
-        /** Upper-cased only when the value carries no unit and contains no digit - i.e. when it is
-            a choice name rather than a reading. A number has no case to change, and any letters in
-            it belong to a unit. */
-        wordsOnly,
-
-        /** Upper-cased unconditionally.
-
-            **This is the one that was a bug.** Reflect-84 used it and printed `DAMPING HF: 4.8
-            KHZ`, `DECAY: 4.6 S` and `OUTPUT TRIM: +2.5 DB`, because its units are baked into the
-            value text rather than carried in `getLabel()`. `KHZ` is not a unit and a capital S is a
-            different unit from a lowercase one. Kept available and named plainly so that choosing
-            it is a decision somebody made, not something that happened. */
-        all
-    };
-
-    ValueCase valueCase = ValueCase::asAuthored;
+       So describeParameter cannot re-case anything at all. That makes the rule structurally
+       enforceable rather than advisory - which matters, because the mode that did it
+       unconditionally is how Reflect-84 shipped `DAMPING HF: 4.8 KHZ` and `DECAY: 4.6 S`. If a
+       display should read SOFT, author the choice as SOFT in the casting's Parameters.h and every
+       consumer agrees. */
 
     /** **900 ms, and the number is single-sourced here rather than being a plurality vote.**
 
@@ -93,26 +71,12 @@ inline juce::String describeParameter (const juce::AudioProcessorParameter& para
     // The NAME is upper-cased and the VALUE is not. The name is a panel label, and every casting
     // silk-screens it in caps; the value may contain a unit or an authored choice string.
     const auto unit = param.getLabel();
-    auto value = param.getText (param.getValue(), 0);
+    const auto value = param.getText (param.getValue(), 0);
 
-    switch (format.valueCase)
-    {
-        case ReadoutFormat::ValueCase::all:
-            value = value.toUpperCase();
-            break;
-
-        case ReadoutFormat::ValueCase::wordsOnly:
-            // A unitless, digit-free value is a choice name rather than a reading.
-            if (unit.isEmpty() && ! value.containsAnyOf ("0123456789"))
-                value = value.toUpperCase();
-            break;
-
-        case ReadoutFormat::ValueCase::asAuthored:
-        default:
-            break;
-    }
-
-    auto text = param.getName (format.nameCharacterBudget).toUpperCase()
+    // **Neither half is re-cased here.** The name is not upper-cased either: parameter names are
+    // authored in caps in each casting's Parameters.h, so the panel and the host's automation lane
+    // print the same string. Applying it here would make this the only site that did.
+    auto text = param.getName (format.nameCharacterBudget)
               + (format.separatorColon ? ": " : " ")
               + value;
 
