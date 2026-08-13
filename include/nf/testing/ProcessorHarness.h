@@ -182,6 +182,20 @@ struct InvarianceResult
     int firstDivergentSample = -1;
     int comparedSamples = 0;
 
+    /** **What the processor actually prepared at, read back from it — not what the loop asked for.**
+
+        Every driver here sweeps something, and every sweep has the same failure available: it
+        collapses to one value while still reporting a full set of results. That happened once
+        already — an algorithm loop passed a raw index where a normalised value belongs, so three of
+        four iterations selected the same choice, and the ONLY tell was three identical figures.
+
+        So each driver logs the varied quantity as the thing itself, read off the processor, rather
+        than as the loop variable. A collapsed sweep then shows up as repeated values in the log
+        instead of as a plausible result.
+    */
+    int actualBlockSize = 0;
+    double actualSampleRate = 0.0;
+
     /** For a report line. Never a verdict — whether a difference matters is the casting's call. */
     juce::String describe() const;
 };
@@ -208,6 +222,28 @@ std::vector<InvarianceResult> blockSizeInvariance (juce::AudioProcessor& process
 InvarianceResult offlineAgainstRealtime (juce::AudioProcessor& processor, RenderSpec spec);
 
 //==============================================================================
+/** A decay measured in SECONDS, with the rate it was measured at read back from the processor. */
+struct DecayResult
+{
+    double requestedSampleRate = 0.0;
+    double actualSampleRate = 0.0;    ///< read back — a sweep that collapsed shows as repeats
+    int actualBlockSize = 0;
+    double secondsToThreshold = -1.0; ///< -1 if it never fell below
+    double peakAbs = 0.0;
+
+    juce::String describe() const;
+};
+
+/** Excites the processor, then measures how long the tail takes to fall below `threshold`.
+
+    **In seconds, not sample counts.** An RT60 of 4.8 s must stay 4.8 s at every rate; comparing
+    sample counts would call a correct processor broken and a rate-dependent one fine.
+*/
+DecayResult measureDecaySeconds (juce::AudioProcessor& processor,
+                                 RenderSpec spec,
+                                 int maxTailBlocks = 8000,
+                                 float threshold = 1.0e-5f);
+
 /** What the numerical scanner found in a rendered tail. */
 struct NumericalReport
 {
@@ -216,6 +252,8 @@ struct NumericalReport
     int infinities = 0;
     double peakAbs = 0.0;
     int blocksUntilSilent = -1;   ///< -1 if it never fell below the threshold
+    double actualSampleRate = 0.0;
+    int actualBlockSize = 0;
 
     bool clean() const noexcept { return subnormals == 0 && nans == 0 && infinities == 0; }
     juce::String describe() const;

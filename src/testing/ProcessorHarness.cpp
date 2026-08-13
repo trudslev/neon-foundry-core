@@ -271,10 +271,16 @@ namespace
 
 juce::String InvarianceResult::describe() const
 {
-    if (sampleExact)
-        return "sample-exact over " + juce::String (comparedSamples) + " samples";
+    // The readback leads, so a collapsed sweep is visible before the verdict is read.
+    juce::String prefix;
+    prefix << "[prepared " << actualBlockSize << " @ " << juce::String (actualSampleRate, 1) << " Hz] ";
 
-    return "DIFFERS: max |delta| " + juce::String (maxAbsDifference, 9)
+    if (sampleExact)
+        return prefix + "sample-exact over " + juce::String (comparedSamples) + " samples";
+
+    return prefix
+
+         + "DIFFERS: max |delta| " + juce::String (maxAbsDifference, 9)
          + ", first at sample " + juce::String (firstDivergentSample)
          + " of " + juce::String (comparedSamples);
 }
@@ -303,7 +309,15 @@ std::vector<InvarianceResult> blockSizeInvariance (juce::AudioProcessor& process
     results.reserve (blockSizes.size());
 
     for (auto size : blockSizes)
-        results.push_back (compare (reference, renderAt (size)));
+    {
+        auto r = compare (reference, renderAt (size));
+
+        // Read back from the processor rather than echoing `size`: if it clamped or ignored the
+        // request, the log shows repeats instead of the sweep the loop believed it ran.
+        r.actualBlockSize = processor.getBlockSize();
+        r.actualSampleRate = processor.getSampleRate();
+        results.push_back (r);
+    }
 
     return results;
 }
@@ -317,7 +331,11 @@ InvarianceResult offlineAgainstRealtime (juce::AudioProcessor& processor, Render
     const auto offline = render (processor, spec);
 
     processor.setNonRealtime (false);
-    return compare (realtime, offline);
+
+    auto r = compare (realtime, offline);
+    r.actualBlockSize = processor.getBlockSize();
+    r.actualSampleRate = processor.getSampleRate();
+    return r;
 }
 
 //==============================================================================
@@ -329,6 +347,7 @@ juce::String NumericalReport::describe() const
 
     s << (blocksUntilSilent >= 0 ? ", silent after " + juce::String (blocksUntilSilent) + " tail blocks"
                                  : ", never fell silent");
+    s << "  [prepared " << actualBlockSize << " @ " << juce::String (actualSampleRate, 1) << " Hz]";
     return s;
 }
 
@@ -341,6 +360,9 @@ NumericalReport scanTail (juce::AudioProcessor& processor,
 
     // Excite first, with the caller's input.
     render (processor, spec);
+
+    report.actualSampleRate = processor.getSampleRate();
+    report.actualBlockSize = processor.getBlockSize();
 
     juce::AudioBuffer<float> buffer (spec.numChannels, spec.blockSize);
     juce::MidiBuffer midi;
@@ -470,3 +492,66 @@ int measureImpulseLatency (juce::AudioProcessor& processor, RenderSpec spec, flo
 }
 
 } // namespace nf::testing
+
+namespace nf::testing
+{
+
+juce::String DecayResult::describe() const
+{
+    juce::String s;
+    s << "[requested " << juce::String (requestedSampleRate, 1)
+      << " Hz, PREPARED AT " << juce::String (actualSampleRate, 1)
+      << " Hz, block " << actualBlockSize << "] ";
+
+    if (secondsToThreshold < 0.0)
+        s << "never fell below threshold";
+    else
+        s << juce::String (secondsToThreshold, 4) << " s to threshold";
+
+    s << ", peak " << juce::String (peakAbs, 6);
+    return s;
+}
+
+DecayResult measureDecaySeconds (juce::AudioProcessor& processor,
+                                 RenderSpec spec,
+                                 int maxTailBlocks,
+                                 float threshold)
+{
+    DecayResult r;
+    r.requestedSampleRate = spec.sampleRate;
+
+    render (processor, spec);
+
+    // **Read back, always.** If the processor clamped the rate — or the harness failed to set it —
+    // the seconds figure below would be computed against a rate that was never used, and a
+    // rate-invariance sweep would report four identical values as a pass.
+    r.actualSampleRate = processor.getSampleRate();
+    r.actualBlockSize = processor.getBlockSize();
+
+    juce::AudioBuffer<float> buffer (spec.numChannels, spec.blockSize);
+    juce::MidiBuffer midi;
+
+    for (int block = 0; block < maxTailBlocks; ++block)
+    {
+        buffer.clear();
+        midi.clear();
+        processor.processBlock (buffer, midi);
+
+        double peak = 0.0;
+        for (int ch = 0; ch < spec.numChannels; ++ch)
+            peak = juce::jmax (peak, (double) buffer.getMagnitude (ch, 0, spec.blockSize));
+
+        r.peakAbs = juce::jmax (r.peakAbs, peak);
+
+        if (r.secondsToThreshold < 0.0 && peak < (double) threshold)
+        {
+            const auto samples = (double) ((block + 1) * spec.blockSize);
+            r.secondsToThreshold = r.actualSampleRate > 0.0 ? samples / r.actualSampleRate : -1.0;
+            break;
+        }
+    }
+
+    return r;
+}
+
+}
