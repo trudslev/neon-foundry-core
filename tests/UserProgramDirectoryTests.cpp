@@ -100,6 +100,67 @@ public:
 
             expect (a.getFullPathName() != b.getFullPathName());
         }
+
+        beginTest ("The process-wide override makes the real location unreachable");
+        {
+            const auto real = nf::userProgramDirectory ("Neon Foundry", "Probe");
+            const auto scratch = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                                     .getChildFile ("nf-override-probe");
+
+            expect (nf::userProgramDirectoryOverrideRoot() == juce::File(),
+                    "something installed an override and did not remove it");
+
+            {
+                const nf::ScopedUserProgramDirectoryOverride redirect { scratch };
+
+                const auto redirected = nf::userProgramDirectory ("Neon Foundry", "Probe");
+
+                expect (redirected != real, "the override did not take effect");
+                expect (redirected.isAChildOf (scratch), "the redirect did not land under the root");
+
+                // The SHAPE is preserved, so a test asserting on the layout asserts on the real
+                // layout: <root>/<company>/<product>/Programs.
+                expectEquals (redirected.getFileName(), juce::String ("Programs"));
+                expectEquals (redirected.getParentDirectory().getFileName(), juce::String ("Probe"));
+                expectEquals (redirected.getParentDirectory().getParentDirectory().getFileName(),
+                              juce::String ("Neon Foundry"));
+
+                // **An explicit per-call override still wins.** A test that names its own scratch
+                // directory means it, and redirecting that would break every suite that asserts
+                // against the path it chose.
+                const auto explicitDir = scratch.getChildFile ("explicit");
+                expectEquals (nf::userProgramDirectory ("Neon Foundry", "Probe", explicitDir)
+                                  .getFullPathName(),
+                              explicitDir.getFullPathName());
+            }
+
+            expect (nf::userProgramDirectoryOverrideRoot() == juce::File(),
+                    "the override outlived its scope");
+            expectEquals (nf::userProgramDirectory ("Neon Foundry", "Probe").getFullPathName(),
+                          real.getFullPathName(),
+                          "the real location did not come back");
+        }
+
+        beginTest ("Overrides nest, so an inner scope restores the outer one rather than clearing");
+        {
+            const auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory);
+            const auto outer = temp.getChildFile ("nf-outer");
+            const auto inner = temp.getChildFile ("nf-inner");
+
+            const nf::ScopedUserProgramDirectoryOverride a { outer };
+            expect (nf::userProgramDirectoryOverrideRoot() == outer);
+
+            {
+                const nf::ScopedUserProgramDirectoryOverride b { inner };
+                expect (nf::userProgramDirectoryOverrideRoot() == inner);
+            }
+
+            // Restoring `previous` rather than clearing matters: a test installing its own redirect
+            // inside a suite that already has one must not drop the outer guard on the way out, or
+            // everything after it in that process resolves to the real directory again.
+            expect (nf::userProgramDirectoryOverrideRoot() == outer,
+                    "the inner scope cleared the override instead of restoring the outer one");
+        }
     }
 };
 

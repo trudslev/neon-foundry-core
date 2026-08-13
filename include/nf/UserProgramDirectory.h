@@ -58,4 +58,58 @@ juce::File userProgramDirectory (juce::StringRef company,
                                  juce::StringRef product,
                                  const juce::File& overrideDirectory);
 
+/** Redirects the resolved directory for the whole process, so a test cannot reach real Programs.
+
+    **Why this exists rather than a note telling people not to.** The per-call override above only
+    helps a caller that has one. A casting's shipping `AudioProcessor` does not: it constructs its
+    ProgramManager with the real path, because that is its job. So the moment a test harness became
+    able to construct the real processor — Reflect-84's `EditorWiringTests`, and the same port in
+    the other five — every one of those suites gained the ability to reach
+    `~/Library/Application Support/<Company>/<Product>/Programs`.
+
+    What stood between that and a test writing there was a comment at the top of one file saying it
+    must not. That is a convention, and this project's entire evidential basis is that **a convention
+    gets broken silently and a guard does not.** It is also the convention most likely to be broken
+    by someone doing exactly the right thing: verifying the Program list needs several saved
+    Programs, and building that state is the obvious way to get it. Eight were created by hand for
+    exactly that reason during the Reflect-84 list work.
+
+    The stakes are not hypothetical either. A cleanup `rm *.taperotprogram` has already destroyed a
+    Program a user had just saved, and there is no undo.
+
+    **With this installed, the real per-OS location is unreachable from `userProgramDirectory`.** An
+    explicit per-call override still wins — a test that names its own scratch directory means it, and
+    silently redirecting that would break the tests that assert against the path they chose — but the
+    *default* branch resolves under `root` instead of under the user's application data. So a suite
+    reaches real Programs only by naming them explicitly, which is no longer something anyone can do
+    by forgetting.
+
+    Install it in `TestMain.cpp` beside `ScopedJuceInitialiser_GUI`, for the same reason that one
+    lives there: it must be in force before the first line of the first test.
+
+    Scoped rather than a bare setter so it cannot be left installed by a test that throws, and so
+    nothing outside a test process can be redirected by accident.
+*/
+class ScopedUserProgramDirectoryOverride
+{
+public:
+    /** @param root  the directory to resolve under. Company/product/Programs are still appended, so
+                     the shape a test sees matches the shape the plugin ships. */
+    explicit ScopedUserProgramDirectoryOverride (const juce::File& root);
+    ~ScopedUserProgramDirectoryOverride();
+
+    ScopedUserProgramDirectoryOverride (const ScopedUserProgramDirectoryOverride&) = delete;
+    ScopedUserProgramDirectoryOverride& operator= (const ScopedUserProgramDirectoryOverride&) = delete;
+
+private:
+    juce::File previous;
+};
+
+/** The process-wide root, or a default-constructed `juce::File` when none is installed.
+
+    For tests and assertions. A caller that branches on this in production has written a redirect it
+    did not mean to have.
+*/
+juce::File userProgramDirectoryOverrideRoot();
+
 } // namespace nf
