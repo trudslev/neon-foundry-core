@@ -163,6 +163,13 @@ public:
         enough User bank scrolls. Making it pure would force five castings to invent scroll-arrow
         artwork no designer has specified, which is the opposite failure.
 
+        **That gap has an owner and a date now: the harmonisation round.** Its catalogue §6
+        specifies one chevron construction for all six — 20px bands carrying the LCD caret's own
+        9 × 9 glyph — so the artwork this was waiting on arrives as part of that round rather than
+        needing a separate ask. When it lands, this becomes the fourth pure-virtual and the five
+        castings draw their own. Until then the note names what it is waiting for, which is the
+        difference between a scheduled gap and one that reads as permanent.
+
         Reflect-84 is not in that five. Its list is a `Component` rather than a `PopupMenu` (three
         of its GUI-SPEC §9 requirements are things `PopupMenu` structurally cannot do), so it paints
         its own chevrons from delivered artwork and never reaches this class. **§H4's extraction is
