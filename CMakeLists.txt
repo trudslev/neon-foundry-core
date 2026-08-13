@@ -32,6 +32,93 @@ elseif(NOT TARGET juce::juce_core)
         "FetchContent_MakeAvailable(JUCE) before adding core, so both come from ONE JUCE tree.")
 endif()
 
+# ---------------------------------------------------------------------------------------------
+# **The pin is enforced here, at configure time, and a mismatch is FATAL.**
+#
+# A casting's FetchContent_Declare states GIT_TAG v1.0.0, but that is a statement of intent that
+# nothing checks: FetchContent will happily satisfy a build from an ALREADY-POPULATED checkout and
+# never contact the remote again. On 2026-08-13 four of the six castings were building against core
+# commits between one and four behind the tag - two of them from before ValueCase was deleted and
+# before the three menu draw* went pure-virtual - and every one of those builds was green. They were
+# simply not building the core that ships.
+#
+# **Checked against the REMOTE, not the local tag ref, and that is the whole point.** v1.0.0 MOVES
+# during pre-release (see the root CLAUDE.md). A stale shallow clone carries its own copy of the tag
+# still pointing at the commit it was fetched at, so a purely local comparison agrees with itself and
+# passes - the same shape as a test that derives its input from the constant it asserts against. Only
+# the remote knows where the tag is now.
+#
+# **FATAL, never a warning.** A warning in a configure log is the same class of signal as the green
+# suite that was running the previous binary: emitted, not read, and indistinguishable from success
+# at the point where it matters.
+if(NOT PROJECT_IS_TOP_LEVEL)
+    # Defaults to the only tag that exists pre-release. A consumer overrides it by setting
+    # NF_CORE_PIN before FetchContent_MakeAvailable, which is what to do once releases are tagged
+    # properly - set it once and feed the same variable to GIT_TAG, so the pin has one spelling.
+    if(NOT DEFINED NF_CORE_PIN)
+        set(NF_CORE_PIN "v1.0.0")
+    endif()
+
+    find_package(Git QUIET REQUIRED)
+
+    execute_process(COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE nf_actual OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE nf_actual_rc ERROR_QUIET)
+
+    execute_process(COMMAND ${GIT_EXECUTABLE} ls-remote origin "refs/tags/${NF_CORE_PIN}^{}" "refs/tags/${NF_CORE_PIN}"
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        OUTPUT_VARIABLE nf_remote OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE nf_remote_rc ERROR_QUIET)
+
+    if(NOT nf_actual_rc EQUAL 0)
+        message(FATAL_ERROR
+            "neon-foundry-core: cannot read the fetched checkout's HEAD in\n"
+            "  ${CMAKE_CURRENT_SOURCE_DIR}\n"
+            "so the pin cannot be verified. Refusing rather than assuming it is current.")
+    endif()
+
+    if(NOT nf_remote_rc EQUAL 0 OR nf_remote STREQUAL "")
+        if(NF_CORE_ALLOW_UNVERIFIED_PIN)
+            message(WARNING "neon-foundry-core: pin NOT verified (offline, explicitly allowed).")
+        else()
+            message(FATAL_ERROR
+                "neon-foundry-core: could not reach the remote to resolve '${NF_CORE_PIN}', so the "
+                "pin is unverified.\n"
+                "This check is deliberately fatal offline: an unverified pin is exactly the state "
+                "that let four castings build against stale core.\n"
+                "To build offline anyway, and knowing the checkout may be stale, configure with "
+                "-DNF_CORE_ALLOW_UNVERIFIED_PIN=ON.")
+        endif()
+    else()
+        # A dereferenced annotated tag (^{}) appears second when both lines match; take the LAST,
+        # which is the commit either way. A lightweight tag yields only the first line.
+        string(REGEX MATCHALL "[0-9a-f]+\trefs/tags/[^\n]*" nf_lines "${nf_remote}")
+        list(GET nf_lines -1 nf_last)
+        string(REGEX REPLACE "\t.*" "" nf_expected "${nf_last}")
+
+        if(NOT nf_actual STREQUAL nf_expected)
+            string(SUBSTRING "${nf_actual}" 0 9 nf_actual_short)
+            string(SUBSTRING "${nf_expected}" 0 9 nf_expected_short)
+            message(FATAL_ERROR
+                "neon-foundry-core is STALE.\n"
+                "  pinned '${NF_CORE_PIN}' is now  ${nf_expected_short}\n"
+                "  this build would use          ${nf_actual_short}\n"
+                "\n"
+                "FetchContent reuses an already-populated checkout and does not re-contact the "
+                "remote, so the tag moved and this tree did not follow.\n"
+                "\n"
+                "Fix, and note it is a RECONFIGURE and not a rebuild - deleting _deps takes the "
+                "JUCE tree with it, and the generated project still names those paths:\n"
+                "    rm -rf ${CMAKE_BINARY_DIR}/_deps\n"
+                "    cmake -B <build-dir> -S <source-dir> -G Xcode")
+        endif()
+
+        string(SUBSTRING "${nf_actual}" 0 9 nf_actual_short)
+        message(STATUS "neon-foundry-core: pin '${NF_CORE_PIN}' verified at ${nf_actual_short}")
+    endif()
+endif()
+
 add_library(neon_foundry_core STATIC
     src/UserProgramDirectory.cpp)
 
