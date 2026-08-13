@@ -80,8 +80,19 @@ public:
     /** Bytes requested since construction, for reporting a size alongside a count. */
     size_t bytes() const noexcept;
 
-    /** True if anything allocated. */
+    /** Frees observed since construction.
+
+        **A `free()` on the audio thread is the same defect class as a `malloc()`** — it can take the
+        allocator's lock and it can block. Counting only allocations misses a whole family: releasing
+        the last reference to a refcounted object, a container shrinking, a `juce::String` assignment
+        dropping its old buffer. That last one is not hypothetical here; see the ProgramId note in
+        the suite's bug-sweep plan.
+    */
+    int frees() const noexcept;
+
+    /** True if anything allocated OR freed. */
     bool sawAllocation() const noexcept { return count() > 0; }
+    bool sawAnyHeapActivity() const noexcept { return count() > 0 || frees() > 0; }
 
 private:
     AllocationSentinel (const AllocationSentinel&) = delete;

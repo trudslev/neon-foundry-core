@@ -16,6 +16,7 @@ namespace
     std::atomic<bool> armed { false };
     std::atomic<int> allocationCount { 0 };
     std::atomic<size_t> allocationBytes { 0 };
+    std::atomic<int> freeCount { 0 };
 
     inline void note (size_t bytes) noexcept
     {
@@ -69,10 +70,19 @@ void* operator new[] (size_t size)
     throw std::bad_alloc();
 }
 
-void operator delete (void* p) noexcept { std::free (p); }
-void operator delete[] (void* p) noexcept { std::free (p); }
-void operator delete (void* p, size_t) noexcept { std::free (p); }
-void operator delete[] (void* p, size_t) noexcept { std::free (p); }
+namespace
+{
+    inline void noteFree (void* p) noexcept
+    {
+        if (p != nullptr && armed.load (std::memory_order_relaxed))
+            freeCount.fetch_add (1, std::memory_order_relaxed);
+    }
+}
+
+void operator delete (void* p) noexcept { noteFree (p); std::free (p); }
+void operator delete[] (void* p) noexcept { noteFree (p); std::free (p); }
+void operator delete (void* p, size_t) noexcept { noteFree (p); std::free (p); }
+void operator delete[] (void* p, size_t) noexcept { noteFree (p); std::free (p); }
 
 namespace nf::testing
 {
@@ -81,6 +91,7 @@ AllocationSentinel::AllocationSentinel()
 {
     allocationCount.store (0, std::memory_order_relaxed);
     allocationBytes.store (0, std::memory_order_relaxed);
+    freeCount.store (0, std::memory_order_relaxed);
     armed.store (true, std::memory_order_relaxed);
 }
 
@@ -97,6 +108,11 @@ int AllocationSentinel::count() const noexcept
 size_t AllocationSentinel::bytes() const noexcept
 {
     return allocationBytes.load (std::memory_order_relaxed);
+}
+
+int AllocationSentinel::frees() const noexcept
+{
+    return freeCount.load (std::memory_order_relaxed);
 }
 
 //==============================================================================

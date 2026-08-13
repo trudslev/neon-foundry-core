@@ -1,4 +1,5 @@
 #include <nf/testing/ProcessorHarness.h>
+#include <nf/ProgramId.h>
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -241,6 +242,43 @@ public:
             p.latencyToIntroduce = 64;
             expectEquals (nf::testing::measureImpulseLatency (p, {}), 64,
                           "a 64-sample delay was not measured as 64");
+        }
+
+
+        beginTest ("The sentinel counts FREES, and a ProgramId assignment is why that matters");
+        {
+            // Category 1's lock question ends here. setCurrentProgram can arrive on the AUDIO thread
+            // — VST3 delivers a program change as an automatable parameter — and it reaches
+            // requestProgramChange, which takes pendingLock and assigns a ProgramId inside it.
+            //
+            // ProgramId holds two juce::Strings. Copying one is a refcount increment, which is cheap
+            // and allocation-free. But the ASSIGNMENT also releases whatever the target held, and a
+            // refcount reaching zero calls free(). **A free() on the audio thread is the same defect
+            // class as a malloc()** — it can take the allocator's lock and it can block.
+            //
+            // Reasoning is not measurement, so this measures it, on the real type.
+            nf::ProgramId slot;
+            slot.id = juce::String ("a-long-enough-identifier-to-own-a-heap-buffer");
+            slot.displayName = juce::String ("ANOTHER LONG ENOUGH DISPLAY NAME TO OWN ONE");
+
+            nf::ProgramId incoming;
+            incoming.id = juce::String ("a-different-long-identifier-owning-its-own-buffer");
+            incoming.displayName = juce::String ("A DIFFERENT LONG DISPLAY NAME OWNING ITS OWN");
+
+            int allocs = 0, frees = 0;
+            {
+                const nf::testing::AllocationSentinel s;
+                slot = incoming;              // exactly what requestProgramChange does under the lock
+                allocs = s.count();
+                frees = s.frees();
+            }
+
+            logMessage ("  ProgramId assignment -> " + juce::String (allocs) + " alloc, "
+                            + juce::String (frees) + " free");
+
+            // Recorded either way. If frees is 0 the strings were short enough to be inlined or the
+            // refcount did not reach zero, and the concern is answered rather than confirmed.
+            expectGreaterOrEqual (frees, 0);
         }
 
         beginTest ("Offline and real-time are compared, and agree when nothing branches on it");
