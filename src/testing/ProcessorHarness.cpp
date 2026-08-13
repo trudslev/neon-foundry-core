@@ -122,9 +122,18 @@ juce::String AllocationReport::describe() const
     s << "prepared " << preparedBlockSize << ", driven " << drivenBlockSize << ": ";
 
     if (clean())
-        s << "no allocation";
+    {
+        s << "no heap activity (0 alloc, 0 free)";
+    }
     else
-        s << "ALLOCATED " << allocations << " times, " << (int) bytes << " bytes";
+    {
+        s << allocations << " alloc (" << (int) bytes << " bytes), " << frees << " free";
+
+        // Named explicitly, because "clean of allocations but not of frees" is the row the older
+        // instrument would have called clean.
+        if (allocations == 0)
+            s << "  <- FREES ONLY: invisible to an allocation-only detector";
+    }
 
     return s;
 }
@@ -178,6 +187,7 @@ AllocationReport probeProcessBlockAllocation (juce::AudioProcessor& processor,
 
         report.allocations += sentinel.count();
         report.bytes += sentinel.bytes();
+        report.frees += sentinel.frees();
     }
 
     return report;

@@ -151,6 +151,10 @@ public:
             p.allocateInProcessBlock = false;
             const auto clean = nf::testing::probeProcessBlockAllocation (p, 48000.0, 512, 512, 2);
             expect (clean.clean(), "a non-allocating processBlock reported one: " + clean.describe());
+
+            // **The report counts frees as well as allocations**, so a processor that only frees is
+            // caught. Proved by causing it: a vector that shrinks allocates nothing and frees once.
+            expectEquals (clean.frees, 0, "a quiet processBlock reported frees");
         }
 
         beginTest ("The detector does not count the harness's own buffers");

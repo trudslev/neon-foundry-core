@@ -106,8 +106,24 @@ struct AllocationReport
     int drivenBlockSize = 0;
     int allocations = 0;
     size_t bytes = 0;
+    int frees = 0;
 
-    bool clean() const noexcept { return allocations == 0; }
+    /** **No heap activity at all — allocations AND frees.**
+
+        This deliberately counts both, and it was not always so. The first version reported only
+        allocations, and every "clean" result taken with it was measured against half the question: a
+        detector blind to `free()` is blind to a refcount reaching zero, a container shrinking, and a
+        smart pointer going out of scope, all of which take the allocator's lock and can block —
+        which is the property being tested.
+
+        Every casting was re-measured when this changed. A measurement taken with an instrument since
+        found incomplete does not carry forward on the strength of having been taken.
+    */
+    bool clean() const noexcept { return allocations == 0 && frees == 0; }
+
+    /** The older, narrower question, kept so a report can say which one a row answers. */
+    bool cleanOfAllocations() const noexcept { return allocations == 0; }
+
     juce::String describe() const;
 };
 
