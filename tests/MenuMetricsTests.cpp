@@ -18,6 +18,19 @@ namespace
         float perCharacter = 10.0f;
         float headerPerCharacter = 0.0f;   // 0 = fall through to the row measurement
 
+        // **The three the base class now makes pure.** A stub has to supply them exactly as a
+        // casting does, which is the change proving itself: before this, a subclass that painted
+        // nothing silently inherited LookAndFeel_V4's menu.
+        void drawPopupMenuBackground (juce::Graphics&, int, int) override {}
+
+        void drawPopupMenuItem (juce::Graphics&, const juce::Rectangle<int>&,
+                                bool, bool, bool, bool, bool, const juce::String&,
+                                const juce::String&, const juce::Drawable*,
+                                const juce::Colour*) override {}
+
+        void drawPopupMenuSectionHeader (juce::Graphics&, const juce::Rectangle<int>&,
+                                         const juce::String&) override {}
+
     protected:
         float measureMenuItemText (const juce::String& text) override
         {

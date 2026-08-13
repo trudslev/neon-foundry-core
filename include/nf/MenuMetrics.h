@@ -146,6 +146,41 @@ public:
 
     int getPopupMenuBorderSize() override { return metrics.borderSize; }
 
+    //==============================================================================
+    /** **The three `draw*` a casting must supply, made pure so it cannot forget one.**
+
+        A derived class that omits one silently inherits `LookAndFeel_V4`'s — JUCE's own menu
+        painting, inside an instrument. That is a mechanism in core permitting the thing the design
+        rules forbid, which is the same reason `ReadoutFormat::ValueCase` was deleted rather than
+        documented.
+
+        All five castings that use this already override all three, so this costs nothing today and
+        closes the hole for good.
+
+        **`drawPopupMenuUpDownArrow` is deliberately NOT among them**, and that is a gap rather
+        than an exemption. No casting overrides it, so all five currently draw JUCE's scroll arrows
+        — and they are reachable: the suite contract runs a list to the panel's bottom, so a long
+        enough User bank scrolls. Making it pure would force five castings to invent scroll-arrow
+        artwork no designer has specified, which is the opposite failure.
+
+        Reflect-84 is not in that five. Its list is a `Component` rather than a `PopupMenu` (three
+        of its GUI-SPEC §9 requirements are things `PopupMenu` structurally cannot do), so it paints
+        its own chevrons from delivered artwork and never reaches this class. **§H4's extraction is
+        therefore complete at five, not half-done at six** — Reflect-84 is not a casting that failed
+        to adopt the shared metrics, it is a casting whose list is a different kind of object.
+
+        When the other five get chevron artwork of their own, the fourth becomes pure too. */
+    void drawPopupMenuBackground (juce::Graphics&, int width, int height) override = 0;
+
+    void drawPopupMenuItem (juce::Graphics&, const juce::Rectangle<int>& area,
+                            bool isSeparator, bool isActive, bool isHighlighted, bool isTicked,
+                            bool hasSubMenu, const juce::String& text,
+                            const juce::String& shortcutKeyText,
+                            const juce::Drawable* icon, const juce::Colour* textColour) override = 0;
+
+    void drawPopupMenuSectionHeader (juce::Graphics&, const juce::Rectangle<int>& area,
+                                     const juce::String& sectionName) override = 0;
+
 protected:
     /** The width `text` will occupy as this casting actually draws it.
 
