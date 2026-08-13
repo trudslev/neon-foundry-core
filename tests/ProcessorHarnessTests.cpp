@@ -31,6 +31,16 @@ namespace
         bool emitSubnormals = false;
         bool emitNaN = false;
         bool keepTailThroughReset = false;
+        // **Default OFF**, so every other test in this file behaves as it did: the subnormal-tail
+        // case needs subnormals to survive, and flush-to-zero would erase the thing it measures.
+        bool guardAgainstDenormals = false;
+
+        // **A runtime multiplier, not the literal 1.0f.** The first version wrote `v * 1.0f`, which
+        // the optimiser folds to a plain copy — no arithmetic, so nothing for flush-to-zero to act
+        // on, and the guarded run passed subnormals straight through exactly like the unguarded one.
+        // The checker looked broken when the PROBE was. A real casting does real arithmetic; the
+        // probe has to as well.
+        float unityGain = 1.0f;
         int  latencyToIntroduce = 0;
 
         void prepareToPlay (double, int samplesPerBlock) override
@@ -45,6 +55,23 @@ namespace
         void releaseResources() override {}
 
         void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override
+        {
+            // **Two paths rather than a conditionally-constructed guard.** The first version used
+            // make_unique, which allocates 8 bytes per block — and this file's own allocation tests
+            // caught it immediately. A test harness that allocates in processBlock to test for
+            // allocation in processBlock is its own punchline.
+            if (guardAgainstDenormals)
+            {
+                const juce::ScopedNoDenormals guard;
+                body (buffer);
+            }
+            else
+            {
+                body (buffer);
+            }
+        }
+
+        void body (juce::AudioBuffer<float>& buffer)
         {
             const auto n = buffer.getNumSamples();
 
@@ -87,7 +114,8 @@ namespace
                     if (emitNaN)
                         v = std::numeric_limits<float>::quiet_NaN();
 
-                    w[i] = v;
+                    // Arithmetic the optimiser cannot fold away — see unityGain's comment.
+                    w[i] = v * unityGain;
                 }
             }
 
@@ -283,6 +311,30 @@ public:
             // Recorded either way. If frees is 0 the strings were short enough to be inlined or the
             // refcount did not reach zero, and the concern is answered rather than confirmed.
             expectGreaterOrEqual (frees, 0);
+        }
+
+
+        beginTest ("The denormal-guard checker tells a guarded processBlock from an unguarded one");
+        {
+            // **The check that asserts the mechanism the whole suite rests on**, and it is worthless
+            // unless it can see the difference. Same processor, guard switched off and on.
+            ProbeProcessor p;
+
+            p.guardAgainstDenormals = false;
+            const auto unguarded = nf::testing::probeDenormalGuard (p);
+            logMessage ("  unguarded -> " + unguarded.describe());
+
+            p.guardAgainstDenormals = true;
+            const auto guarded = nf::testing::probeDenormalGuard (p);
+            logMessage ("  guarded   -> " + guarded.describe());
+
+            expect (! unguarded.guardActive,
+                    "an UNGUARDED processBlock was reported as guarded — the checker cannot see the "
+                    "difference and every casting's result from it is worthless: "
+                        + unguarded.describe());
+
+            expect (guarded.guardActive,
+                    "a guarded processBlock was reported as unguarded: " + guarded.describe());
         }
 
         beginTest ("Offline and real-time are compared, and agree when nothing branches on it");

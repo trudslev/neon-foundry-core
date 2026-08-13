@@ -222,6 +222,40 @@ std::vector<InvarianceResult> blockSizeInvariance (juce::AudioProcessor& process
 InvarianceResult offlineAgainstRealtime (juce::AudioProcessor& processor, RenderSpec spec);
 
 //==============================================================================
+/** What a denormal-guard probe saw. */
+struct DenormalGuardReport
+{
+    int subnormalsIn = 0;      ///< how many subnormal samples were fed in
+    int subnormalsOut = 0;     ///< how many survived to the output
+    bool guardActive = false;
+
+    juce::String describe() const;
+};
+
+/** Feeds SUBNORMAL input and reports whether the processor's guard flushed it.
+
+    **This asserts the mechanism the whole suite rests on.** `ScopedNoDenormals` is one line in one
+    file per casting, and no DSP stage in the suite carries its own guard — so every decaying path in
+    every plugin is covered by a single statement that, until this existed, nothing asserted and
+    nothing tested. A floor in one filter defends one site; this defends all six.
+
+    **How it works, and why it is a real check rather than a restatement.** `ScopedNoDenormals` sets
+    the CPU's flush-to-zero mode, which on every platform this suite targets also treats subnormal
+    *inputs* as zero. So a subnormal fed into a guarded `processBlock` cannot survive to the output;
+    fed into an unguarded one, an ordinary passthrough preserves it.
+
+    It therefore fails if the guard is **removed**, **narrowed** to part of the function, or a path is
+    **scoped past it** — the three ways one line stops covering what it appears to.
+
+    Proved by causing it: core's own tests run this against a probe processor with the guard and
+    without, and the two must disagree. A guard-checker that cannot tell them apart is exactly the
+    class of check this project keeps finding.
+*/
+DenormalGuardReport probeDenormalGuard (juce::AudioProcessor& processor,
+                                        double sampleRate = 48000.0,
+                                        int blockSize = 512,
+                                        int numChannels = 2);
+
 /** A decay measured in SECONDS, with the rate it was measured at read back from the processor. */
 struct DecayResult
 {

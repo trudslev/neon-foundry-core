@@ -555,3 +555,62 @@ DecayResult measureDecaySeconds (juce::AudioProcessor& processor,
 }
 
 }
+
+namespace nf::testing
+{
+
+juce::String DenormalGuardReport::describe() const
+{
+    juce::String s;
+    s << subnormalsIn << " subnormal samples in -> " << subnormalsOut << " out: ";
+    s << (guardActive ? "guard ACTIVE" : "GUARD NOT COVERING THIS PATH");
+    return s;
+}
+
+DenormalGuardReport probeDenormalGuard (juce::AudioProcessor& processor,
+                                        double sampleRate,
+                                        int blockSize,
+                                        int numChannels)
+{
+    DenormalGuardReport report;
+
+    processor.setRateAndBufferSizeDetails (sampleRate, blockSize);
+    processor.prepareToPlay (sampleRate, blockSize);
+
+    juce::AudioBuffer<float> buffer (numChannels, blockSize);
+    juce::MidiBuffer midi;
+
+    // A value that IS subnormal: below FLT_MIN (1.175e-38) and above zero.
+    const float subnormal = 1.0e-40f;
+
+    // Warm up first, so a first-block transient is not what is measured.
+    for (int i = 0; i < 4; ++i)
+    {
+        buffer.clear();
+        midi.clear();
+        processor.processBlock (buffer, midi);
+    }
+
+    for (int ch = 0; ch < numChannels; ++ch)
+        for (int i = 0; i < blockSize; ++i)
+            buffer.setSample (ch, i, subnormal);
+
+    report.subnormalsIn = numChannels * blockSize;
+
+    midi.clear();
+    processor.processBlock (buffer, midi);
+
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        const auto* read = buffer.getReadPointer (ch);
+
+        for (int i = 0; i < blockSize; ++i)
+            if (std::fpclassify (read[i]) == FP_SUBNORMAL)
+                ++report.subnormalsOut;
+    }
+
+    report.guardActive = (report.subnormalsOut == 0);
+    return report;
+}
+
+}
