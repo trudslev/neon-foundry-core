@@ -10,7 +10,8 @@ target_sources(NeonFoundryCoreTests PRIVATE
     ParameterReadoutTests.cpp
     MenuMetricsTests.cpp
     PrintedScaleTests.cpp
-    UserEditGateTests.cpp)
+    UserEditGateTests.cpp
+    ProcessorHarnessTests.cpp)
 
 target_compile_definitions(NeonFoundryCoreTests PRIVATE
     JUCE_WEB_BROWSER=0
@@ -19,6 +20,9 @@ target_compile_definitions(NeonFoundryCoreTests PRIVATE
 
 target_link_libraries(NeonFoundryCoreTests PRIVATE
     neon_foundry_core
+    # The harness target, not the shipping library — see the comment on nf::testing in the parent
+    # CMakeLists. Core's own tests prove the drivers work; the castings' tests use them.
+    nf::testing
     juce::juce_core
     juce::juce_events
     juce::juce_gui_basics

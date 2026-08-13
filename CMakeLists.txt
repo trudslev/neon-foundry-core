@@ -149,6 +149,24 @@ target_link_libraries(neon_foundry_core PUBLIC
 # nothing reads.
 
 # ---------------------------------------------------------------------------------------------
+# **nf::testing — a SECOND target, deliberately not part of nf::core.**
+#
+# The suite-wide bug sweep's measurement harness. It is a stated widening of the extraction's §I and
+# the reasoning lives at the top of include/nf/testing/ProcessorHarness.h, at the exemption, on the
+# model of NO_REDIRECT_NEEDED in tools/run_tests.py.
+#
+# **Separate target, and that is the whole guard.** A casting's PLUGIN target links nf::core; only
+# its TEST target links nf::testing. Folding these into one library would put an operator new
+# override into every shipping binary in the suite, which is exactly the sort of thing that is
+# invisible until it is catastrophic.
+add_library(neon_foundry_core_testing STATIC
+    src/testing/ProcessorHarness.cpp)
+
+add_library(nf::testing ALIAS neon_foundry_core_testing)
+
+target_link_libraries(neon_foundry_core_testing PUBLIC neon_foundry_core)
+
+# ---------------------------------------------------------------------------------------------
 # Tests build only when core is the top-level project, so a casting consuming it via FetchContent
 # does not inherit a test target it never asked for and cannot run.
 if(PROJECT_IS_TOP_LEVEL AND NOT DEFINED NF_CORE_SKIP_TESTS)
