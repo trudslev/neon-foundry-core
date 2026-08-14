@@ -466,6 +466,83 @@ public:
                     "44.1 kHz was within the clamp and should have been adopted");
         }
 
+
+        beginTest ("A filter's cutoff is verified by its RESPONSE, and the extremes are where a bug shows");
+        {
+            // **The failure mode this exists for**: a coefficient computed from a NORMALISED
+            // frequency rather than from fs is exactly right at the rate it was written for and
+            // wrong everywhere else, in proportion to the rate ratio. Coefficient readback cannot
+            // see it — the filter still reports the cutoff it was asked for. Only the response moves.
+            //
+            // Two one-pole low-passes at a nominal 500 Hz. One computes its coefficient from fs and
+            // is correct at any rate; the other bakes in a coefficient for 48 kHz and is wrong
+            // everywhere else while claiming the same cutoff.
+            struct Correct
+            {
+                float z = 0.0f, a = 0.0f;
+                void prepare (double fs) { a = (float) (1.0 - std::exp (-juce::MathConstants<double>::twoPi * 500.0 / fs)); }
+                void reset() { z = 0.0f; }
+                float process (float x) { z += a * (x - z); return z; }
+            };
+
+            struct NormalisedBug
+            {
+                float z = 0.0f;
+                // Written and tuned at 48 kHz, then never re-derived. Correct there, wrong elsewhere.
+                float a = 0.0634f;
+                void prepare (double) {}
+                void reset() { z = 0.0f; }
+                float process (float x) { z += a * (x - z); return z; }
+            };
+
+            const std::vector<double> probes { 125.0, 250.0, 500.0, 1000.0, 2000.0 };
+
+            const auto responseAt = [&probes] (auto& filter, double fs)
+            {
+                filter.prepare (fs);
+                return nf::testing::measureMagnitudeResponse (
+                    [&filter] (float x) { return filter.process (x); },
+                    [&filter] { filter.reset(); },
+                    fs, probes);
+            };
+
+            Correct good;
+            const auto good441 = responseAt (good, 44100.0);
+            const auto good48  = responseAt (good, 48000.0);
+            const auto good192 = responseAt (good, 192000.0);
+
+            NormalisedBug bad;
+            const auto bad441 = responseAt (bad, 44100.0);
+            const auto bad48  = responseAt (bad, 48000.0);
+            const auto bad192 = responseAt (bad, 192000.0);
+
+            const auto goodAdjacent = nf::testing::largestResponseDifferenceDb (good441, good48);
+            const auto goodExtreme  = nf::testing::largestResponseDifferenceDb (good441, good192);
+            const auto badAdjacent  = nf::testing::largestResponseDifferenceDb (bad441, bad48);
+            const auto badExtreme   = nf::testing::largestResponseDifferenceDb (bad441, bad192);
+
+            logMessage ("  correct filter  44.1k vs 48k -> " + juce::String (goodAdjacent, 3) + " dB");
+            logMessage ("  correct filter  44.1k vs 192k -> " + juce::String (goodExtreme, 3) + " dB");
+            logMessage ("  normalised bug  44.1k vs 48k -> " + juce::String (badAdjacent, 3) + " dB");
+            logMessage ("  normalised bug  44.1k vs 192k -> " + juce::String (badExtreme, 3) + " dB");
+
+            // A filter computed from fs holds its response at every rate.
+            expectLessThan (goodExtreme, 0.5,
+                            "a correctly-derived filter moved across rates, so this measurement "
+                            "cannot be trusted to say a wrong one did");
+
+            // **And the bug must be visible — loudly at the extremes.**
+            expectGreaterThan (badExtreme, 3.0,
+                               "a filter with a hard-coded 48 kHz coefficient was not detected at "
+                               "44.1k vs 192k, so no casting's filter row means anything");
+
+            // **The point of sweeping the extremes rather than the neighbours**: the same bug is
+            // far quieter between adjacent rates, which is where it hides.
+            expectGreaterThan (badExtreme, badAdjacent * 2.0,
+                               "the adjacent-rate comparison was as revealing as the extreme one, "
+                               "which would make the extremes advice wrong");
+        }
+
         beginTest ("Offline vs real-time knows whether setNonRealtime actually took effect");
         {
             // Calling setNonRealtime(true) is not evidence that it took. A processor that ignores it

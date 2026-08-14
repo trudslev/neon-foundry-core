@@ -694,3 +694,64 @@ std::vector<SampleRateRow> sampleRateSweep (juce::AudioProcessor& processor,
 }
 
 }
+
+namespace nf::testing
+{
+
+std::vector<MagnitudeRow> measureMagnitudeResponse (const std::function<float (float)>& processOneSample,
+                                                    const std::function<void()>& reset,
+                                                    double sampleRate,
+                                                    const std::vector<double>& frequenciesHz,
+                                                    int settleCycles,
+                                                    int measureCycles)
+{
+    std::vector<MagnitudeRow> rows;
+    rows.reserve (frequenciesHz.size());
+
+    for (auto hz : frequenciesHz)
+    {
+        if (reset != nullptr)
+            reset();
+
+        const double omega = juce::MathConstants<double>::twoPi * hz / sampleRate;
+        const auto samplesPerCycle = sampleRate / hz;
+
+        // Settle first: a filter's transient is not its steady-state response, and measuring
+        // through it reports the transient.
+        const auto settle = (int) (samplesPerCycle * settleCycles);
+        for (int i = 0; i < settle; ++i)
+            processOneSample ((float) std::sin (omega * i));
+
+        // RMS over a whole number of cycles, so the window does not bias the result.
+        const auto measure = (int) (samplesPerCycle * measureCycles);
+        double sum = 0.0;
+
+        for (int i = 0; i < measure; ++i)
+        {
+            const double y = processOneSample ((float) std::sin (omega * (settle + i)));
+            sum += y * y;
+        }
+
+        const double rms = measure > 0 ? std::sqrt (sum / (double) measure) : 0.0;
+
+        // A unit sine has RMS 1/sqrt(2); express the result relative to that so 0 dB is unity gain.
+        const double gain = rms * juce::MathConstants<double>::sqrt2;
+        rows.push_back ({ hz, gain > 0.0 ? 20.0 * std::log10 (gain) : -200.0 });
+    }
+
+    return rows;
+}
+
+double largestResponseDifferenceDb (const std::vector<MagnitudeRow>& a,
+                                    const std::vector<MagnitudeRow>& b)
+{
+    double worst = 0.0;
+    const auto n = juce::jmin (a.size(), b.size());
+
+    for (size_t i = 0; i < n; ++i)
+        worst = juce::jmax (worst, std::abs (a[i].gainDb - b[i].gainDb));
+
+    return worst;
+}
+
+}

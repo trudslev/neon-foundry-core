@@ -281,6 +281,51 @@ std::vector<SampleRateRow> sampleRateSweep (juce::AudioProcessor& processor,
                                             int maxTailBlocks = 8000,
                                             float threshold = 1.0e-5f);
 
+/** One probe frequency and the gain the filter actually applied there. */
+struct MagnitudeRow
+{
+    double frequencyHz = 0.0;
+    double gainDb = 0.0;
+};
+
+/** Measures a filter's real magnitude response, by playing sine tones through it and reading the
+    output level — not by reading its coefficients back.
+
+    **Coefficient readback would answer the wrong question.** A filter that computes its coefficients
+    from a normalised frequency rather than from `fs` still *reports* the cutoff it was asked for; it
+    is the response that moves. "A filter that reports its intended cutoff while computing a
+    different one" is the whole shape this category is about, so the measurement has to be of
+    behaviour.
+
+    **Why this matters most at the extremes.** A normalised-frequency bug is exactly right at the rate
+    it was written for and wrong in proportion to the rate ratio. 44.1 -> 48 kHz moves it by 9 %,
+    which hides inside any sane tolerance; 44.1 -> 192 kHz moves it by a factor of four and a bit,
+    which cannot be missed. Sweep the extremes, not the neighbours.
+
+    `processOneSample` is the casting's own filter, wrapped — core cannot know what a casting's
+    filter is, and several of them (Elmer's sidechain HP, Gatecrasher's trigger HP/LP, Reflect-84's
+    damping) never reach the plugin's output at all, so a render-based measurement could not see
+    them.
+
+    @param processOneSample  one sample in, one sample out, already prepared at `sampleRate`
+    @param reset             called before each tone so the filter starts from a known state
+*/
+std::vector<MagnitudeRow> measureMagnitudeResponse (const std::function<float (float)>& processOneSample,
+                                                   const std::function<void()>& reset,
+                                                   double sampleRate,
+                                                   const std::vector<double>& frequenciesHz,
+                                                   int settleCycles = 40,
+                                                   int measureCycles = 40);
+
+/** The largest difference, in dB, between two responses measured at the same frequencies.
+
+    **This is the rate-invariance test for a filter**: the response at 500 Hz must be the same at
+    44.1 kHz and at 192 kHz. Comparing responses at fixed frequencies in Hz needs no -3 dB search and
+    no FFT — if the curve moved, the cutoff moved.
+*/
+double largestResponseDifferenceDb (const std::vector<MagnitudeRow>& a,
+                                    const std::vector<MagnitudeRow>& b);
+
 /** Renders the same input offline and real-time, and compares.
 
     `setNonRealtime(true)` is a hint a processor may legitimately act on — a higher-quality path, a
