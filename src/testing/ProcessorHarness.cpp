@@ -203,6 +203,19 @@ std::vector<std::vector<float>> render (juce::AudioProcessor& processor, const R
     processor.setRateAndBufferSizeDetails (spec.sampleRate, spec.blockSize);
     processor.prepareToPlay (spec.sampleRate, spec.blockSize);
 
+    // **reset() as well as prepareToPlay, and this was a real harness defect.**
+    //
+    // Two identical renders of Reflect-84 differed — max |delta| 0.124, first at sample 351 — which
+    // made every block-size invariance row measure non-determinism rather than block dependence.
+    // The cause was not randomness: prepareToPlay reseeds its LFOs. It was the reverb TAIL surviving
+    // prepareToPlay, so the second render began inside the first one's decay.
+    //
+    // A driver whose renders are not reproducible cannot measure invariance at all, so this belongs
+    // here rather than in each caller. Note it does NOT hide anything: whether state should survive
+    // prepareToPlay is category 4's question, and category 4 drives that sequence deliberately
+    // rather than through this function.
+    processor.reset();
+
     juce::AudioBuffer<float> buffer (spec.numChannels, spec.blockSize);
     juce::MidiBuffer midi;
 
