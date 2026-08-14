@@ -755,3 +755,72 @@ double largestResponseDifferenceDb (const std::vector<MagnitudeRow>& a,
 }
 
 }
+
+namespace nf::testing
+{
+
+std::vector<MagnitudeRow> measureProcessorMagnitudeResponse (juce::AudioProcessor& processor,
+                                                             double sampleRate,
+                                                             int blockSize,
+                                                             const std::vector<double>& frequenciesHz,
+                                                             int settleBlocks,
+                                                             int measureBlocks)
+{
+    std::vector<MagnitudeRow> rows;
+    rows.reserve (frequenciesHz.size());
+
+    processor.setRateAndBufferSizeDetails (sampleRate, blockSize);
+
+    for (auto hz : frequenciesHz)
+    {
+        processor.prepareToPlay (sampleRate, blockSize);
+
+        juce::AudioBuffer<float> buffer (2, blockSize);
+        juce::MidiBuffer midi;
+
+        const double omega = juce::MathConstants<double>::twoPi * hz / sampleRate;
+        juce::int64 n = 0;
+
+        const auto fill = [&]
+        {
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                for (int i = 0; i < blockSize; ++i)
+                    buffer.setSample (ch, i, (float) std::sin (omega * (double) (n + i)));
+        };
+
+        for (int b = 0; b < settleBlocks; ++b)
+        {
+            fill();
+            n += blockSize;
+            midi.clear();
+            processor.processBlock (buffer, midi);
+        }
+
+        double sum = 0.0;
+        juce::int64 count = 0;
+
+        for (int b = 0; b < measureBlocks; ++b)
+        {
+            fill();
+            n += blockSize;
+            midi.clear();
+            processor.processBlock (buffer, midi);
+
+            const auto* read = buffer.getReadPointer (0);
+
+            for (int i = 0; i < blockSize; ++i)
+            {
+                sum += (double) read[i] * (double) read[i];
+                ++count;
+            }
+        }
+
+        const double rms = count > 0 ? std::sqrt (sum / (double) count) : 0.0;
+        const double gain = rms * juce::MathConstants<double>::sqrt2;
+        rows.push_back ({ hz, gain > 0.0 ? 20.0 * std::log10 (gain) : -200.0 });
+    }
+
+    return rows;
+}
+
+}

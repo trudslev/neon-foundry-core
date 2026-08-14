@@ -317,6 +317,29 @@ std::vector<MagnitudeRow> measureMagnitudeResponse (const std::function<float (f
                                                    int settleCycles = 40,
                                                    int measureCycles = 40);
 
+/** The same measurement, driven through a whole `AudioProcessor` rather than a per-sample callable.
+
+    **This exists to validate the callable, not to replace it.** Four of the suite's five cutoffs
+    never reach their plugin's output — Elmer's sidechain HP feeds the detector, Gatecrasher's two
+    feed the gate, Reflect-84's damping sits inside the tanks — so for those the callable is the only
+    instrument that works, and an instrument that cannot be cross-checked is one that has to be
+    trusted.
+
+    **TapeRot is the single opportunity to check it.** Its `ToneFilters` sit on the audio path, so its
+    cutoffs are reachable both ways. Measuring both and comparing either validates the callable
+    against a path where an independent check is possible — and the four callable-only cases inherit
+    that — or produces a finding about the instrument before any of its results are believed. Every
+    other instrument in this sweep has had to earn its results the same way.
+
+    Block-oriented, so it measures the processor as a host drives it.
+*/
+std::vector<MagnitudeRow> measureProcessorMagnitudeResponse (juce::AudioProcessor& processor,
+                                                             double sampleRate,
+                                                             int blockSize,
+                                                             const std::vector<double>& frequenciesHz,
+                                                             int settleBlocks = 24,
+                                                             int measureBlocks = 24);
+
 /** The largest difference, in dB, between two responses measured at the same frequencies.
 
     **This is the rate-invariance test for a filter**: the response at 500 Hz must be the same at
