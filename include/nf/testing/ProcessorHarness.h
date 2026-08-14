@@ -228,6 +228,47 @@ std::vector<InvarianceResult> blockSizeInvariance (juce::AudioProcessor& process
                                                    RenderSpec spec,
                                                    const std::vector<int>& blockSizes);
 
+/** Timing of a repeated call, in nanoseconds. Median and p95 rather than mean: a lock stall is a
+    tail event, and a mean hides one block in fifty behind forty-nine quick ones. */
+struct TimingReport
+{
+    double medianNs = 0.0;
+    double p95Ns = 0.0;
+    double maxNs = 0.0;
+    int samples = 0;
+
+    juce::String describe() const;
+};
+
+/** Times `processBlock` over many blocks, optionally while something else runs concurrently.
+
+    **Two questions, and only one of them is answered by timing the quiet path.**
+
+      1. *Does `processBlock`'s normal path take a lock?* Timing it alone answers this only in the
+         sense that nothing contends — a lock taken with no contender is nearly free, so a quiet
+         timing cannot distinguish "takes no lock" from "takes an uncontended one".
+      2. *Does the audio thread reach a lock via `setCurrentProgram`?* This is the one with a finding
+         already attached: `requestProgramChange` takes `pendingLock` and performs two `free()`s
+         inside it, and VST3 can deliver a program change **on the audio thread**.
+
+    So `contend` is run repeatedly on another thread for the duration. Passing the casting's own
+    `setCurrentProgram` there makes the difference between the two timings the answer: if
+    `processBlock` is lock-free with respect to that lock, hammering the other entry point cannot
+    stall it.
+
+    **"Lock-free in steady state" and "lock-free" are different claims and only one is true here.**
+    A probe that timed the quiet path alone would report the stronger one.
+*/
+TimingReport timeProcessBlock (juce::AudioProcessor& processor,
+                               double sampleRate,
+                               int blockSize,
+                               int numChannels,
+                               int blocks,
+                               const std::function<void()>& contend = {});
+
+/** Times a callable directly — for the entry point VST3 may deliver on the audio thread. */
+TimingReport timeCallable (const std::function<void()>& call, int iterations);
+
 /** Deliberately corrupts one sample of a rendered result, for proving a comparison can fail.
 
     **A driver that cannot demonstrate its own failure has not demonstrated anything**, and

@@ -3,6 +3,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <limits>
+#include <algorithm>
+#include <chrono>
+#include <thread>
 #include <new>
 
 namespace
@@ -821,6 +824,110 @@ std::vector<MagnitudeRow> measureProcessorMagnitudeResponse (juce::AudioProcesso
     }
 
     return rows;
+}
+
+}
+
+namespace nf::testing
+{
+
+namespace
+{
+    TimingReport summarise (std::vector<double>& ns)
+    {
+        TimingReport r;
+        if (ns.empty())
+            return r;
+
+        std::sort (ns.begin(), ns.end());
+        r.samples = (int) ns.size();
+        r.medianNs = ns[ns.size() / 2];
+        r.p95Ns = ns[(size_t) ((double) ns.size() * 0.95)];
+        r.maxNs = ns.back();
+        return r;
+    }
+}
+
+juce::String TimingReport::describe() const
+{
+    juce::String s;
+    s << "median " << juce::String (medianNs / 1000.0, 2) << " us, p95 "
+      << juce::String (p95Ns / 1000.0, 2) << " us, max "
+      << juce::String (maxNs / 1000.0, 2) << " us over " << samples;
+    return s;
+}
+
+TimingReport timeProcessBlock (juce::AudioProcessor& processor,
+                               double sampleRate,
+                               int blockSize,
+                               int numChannels,
+                               int blocks,
+                               const std::function<void()>& contend)
+{
+    processor.setRateAndBufferSizeDetails (sampleRate, blockSize);
+    processor.prepareToPlay (sampleRate, blockSize);
+
+    juce::AudioBuffer<float> buffer (numChannels, blockSize);
+    juce::MidiBuffer midi;
+
+    std::atomic<bool> running { true };
+    std::thread contender;
+
+    if (contend != nullptr)
+        contender = std::thread ([&running, &contend]
+        {
+            while (running.load (std::memory_order_relaxed))
+                contend();
+        });
+
+    // Warm up unmeasured, so a first-block transient is not the tail this reports.
+    for (int i = 0; i < 16; ++i)
+    {
+        buffer.clear();
+        midi.clear();
+        processor.processBlock (buffer, midi);
+    }
+
+    std::vector<double> ns;
+    ns.reserve ((size_t) blocks);
+
+    for (int i = 0; i < blocks; ++i)
+    {
+        buffer.clear();
+        midi.clear();
+
+        const auto t0 = std::chrono::steady_clock::now();
+        processor.processBlock (buffer, midi);
+        const auto t1 = std::chrono::steady_clock::now();
+
+        ns.push_back ((double) std::chrono::duration_cast<std::chrono::nanoseconds> (t1 - t0).count());
+    }
+
+    running.store (false, std::memory_order_relaxed);
+
+    if (contender.joinable())
+        contender.join();
+
+    return summarise (ns);
+}
+
+TimingReport timeCallable (const std::function<void()>& call, int iterations)
+{
+    std::vector<double> ns;
+    ns.reserve ((size_t) iterations);
+
+    for (int i = 0; i < 16; ++i)
+        call();
+
+    for (int i = 0; i < iterations; ++i)
+    {
+        const auto t0 = std::chrono::steady_clock::now();
+        call();
+        const auto t1 = std::chrono::steady_clock::now();
+        ns.push_back ((double) std::chrono::duration_cast<std::chrono::nanoseconds> (t1 - t0).count());
+    }
+
+    return summarise (ns);
 }
 
 }
