@@ -337,6 +337,85 @@ public:
                     "a guarded processBlock was reported as unguarded: " + guarded.describe());
         }
 
+
+        beginTest ("The comparison can FAIL — one LSB is enough, so sample-exact means it");
+        {
+            // **Invariance is the category most able to produce a convincing wrong answer.**
+            // "Sample-exact across four block sizes" is the strongest claim in this harness, and
+            // every way it can be falsely true is quiet: a render that never varied, a comparison
+            // against itself, a tolerance wide enough to swallow the difference, a driver that
+            // prepared once and reported four times.
+            //
+            // Sample-exactness means the tolerance is ZERO, so a single one-LSB perturbation must
+            // register. If it does not, the comparison is not what it says it is.
+            ProbeProcessor p;
+
+            nf::testing::RenderSpec spec;
+            spec.numBlocks = 8;
+
+            const auto a = nf::testing::render (p, spec);
+            auto b = nf::testing::render (p, spec);
+
+            const auto identical = nf::testing::compareRenders (a, b);
+            expect (identical.sampleExact,
+                    "two identical renders did not compare equal, so the driver is not "
+                    "deterministic and no invariance result from it means anything: "
+                        + identical.describe());
+
+            // One representable step, on one sample, of one channel.
+            nf::testing::perturbByOneLsb (b, 0, 137);
+
+            const auto perturbed = nf::testing::compareRenders (a, b);
+            expect (! perturbed.sampleExact,
+                    "a ONE-LSB difference was reported as sample-exact. Every 'invariance holds' "
+                    "result from this comparison is worthless: " + perturbed.describe());
+
+            expectEquals (perturbed.firstDivergentSample, 137,
+                          "the comparison detected a difference but not where it was");
+
+            expectGreaterThan (perturbed.maxAbsDifference, 0.0);
+        }
+
+        beginTest ("The block-size sweep reports the size the PROCESSOR received, per run");
+        {
+            // A host that clamps, or a driver that silently reuses a buffer, produces four identical
+            // renders that compare equal for the wrong reason. The readback is what distinguishes
+            // "invariant across four sizes" from "one size measured four times".
+            ProbeProcessor p;
+
+            const std::vector<int> sizes { 64, 128, 511, 2048 };
+            const auto results = nf::testing::blockSizeInvariance (p, {}, sizes);
+
+            expectEquals ((int) results.size(), (int) sizes.size());
+
+            for (size_t i = 0; i < results.size(); ++i)
+            {
+                logMessage ("  requested " + juce::String (sizes[i]) + " -> "
+                                + results[i].describe());
+
+                expectEquals (results[i].actualBlockSize, sizes[i],
+                              "the processor was prepared at a different size than the sweep "
+                              "requested, so this row is not the measurement it appears to be");
+            }
+        }
+
+        beginTest ("Offline vs real-time knows whether setNonRealtime actually took effect");
+        {
+            // Calling setNonRealtime(true) is not evidence that it took. A processor that ignores it
+            // gives two identical renders that compare equal for the wrong reason — and "offline
+            // matches real-time" is exactly what that looks like.
+            ProbeProcessor p;
+            const auto r = nf::testing::offlineAgainstRealtime (p, {});
+
+            logMessage ("  " + r.describe());
+
+            expect (r.nonRealtimeWasHonoured,
+                    "the processor did not report itself non-realtime after setNonRealtime(true), so "
+                    "the comparison compared two real-time renders: " + r.describe());
+
+            expect (r.comparisonWasMeaningful);
+        }
+
         beginTest ("Offline and real-time are compared, and agree when nothing branches on it");
         {
             ProbeProcessor p;

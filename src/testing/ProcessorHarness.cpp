@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <new>
 
 namespace
@@ -275,6 +276,9 @@ juce::String InvarianceResult::describe() const
     juce::String prefix;
     prefix << "[prepared " << actualBlockSize << " @ " << juce::String (actualSampleRate, 1) << " Hz] ";
 
+    if (! comparisonWasMeaningful)
+        prefix << "**COMPARISON PROVED NOTHING** ";
+
     if (sampleExact)
         return prefix + "sample-exact over " + juce::String (comparedSamples) + " samples";
 
@@ -328,6 +332,11 @@ InvarianceResult offlineAgainstRealtime (juce::AudioProcessor& processor, Render
     const auto realtime = render (processor, spec);
 
     processor.setNonRealtime (true);
+
+    // **Read back rather than assume the call took effect.** Two identical renders compare equal
+    // whether the processor switched modes or ignored the request, and the second is not a pass.
+    const bool honoured = processor.isNonRealtime();
+
     const auto offline = render (processor, spec);
 
     processor.setNonRealtime (false);
@@ -335,6 +344,8 @@ InvarianceResult offlineAgainstRealtime (juce::AudioProcessor& processor, Render
     auto r = compare (realtime, offline);
     r.actualBlockSize = processor.getBlockSize();
     r.actualSampleRate = processor.getSampleRate();
+    r.nonRealtimeWasHonoured = honoured;
+    r.comparisonWasMeaningful = honoured;
     return r;
 }
 
@@ -611,6 +622,28 @@ DenormalGuardReport probeDenormalGuard (juce::AudioProcessor& processor,
 
     report.guardActive = (report.subnormalsOut == 0);
     return report;
+}
+
+}
+
+namespace nf::testing
+{
+
+void perturbByOneLsb (std::vector<std::vector<float>>& rendered, size_t channel, size_t index)
+{
+    if (channel >= rendered.size() || index >= rendered[channel].size())
+        return;
+
+    // std::nextafter moves by exactly one representable step, which is the smallest difference a
+    // sample-exact comparison must still catch. A larger nudge would prove less.
+    auto& v = rendered[channel][index];
+    v = std::nextafter (v, std::numeric_limits<float>::infinity());
+}
+
+InvarianceResult compareRenders (const std::vector<std::vector<float>>& a,
+                                 const std::vector<std::vector<float>>& b)
+{
+    return compare (a, b);
 }
 
 }

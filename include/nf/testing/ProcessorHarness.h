@@ -196,6 +196,20 @@ struct InvarianceResult
     int actualBlockSize = 0;
     double actualSampleRate = 0.0;
 
+    /** For `offlineAgainstRealtime` only: whether the processor actually reported itself
+        non-realtime during the offline render.
+
+        **Calling `setNonRealtime(true)` is not evidence that it took effect.** A processor that
+        ignores it, or a JUCE version that changes the semantics, produces two identical renders that
+        compare equal for the wrong reason — and "offline matches real-time" is exactly what that
+        looks like. Read back, not assumed. */
+    bool nonRealtimeWasHonoured = false;
+
+    /** True when the two sides came from renders that were actually different in the way intended.
+        Set by the drivers; a false here means the comparison proved nothing regardless of its
+        verdict. */
+    bool comparisonWasMeaningful = true;
+
     /** For a report line. Never a verdict — whether a difference matters is the casting's call. */
     juce::String describe() const;
 };
@@ -212,6 +226,26 @@ struct InvarianceResult
 std::vector<InvarianceResult> blockSizeInvariance (juce::AudioProcessor& processor,
                                                    RenderSpec spec,
                                                    const std::vector<int>& blockSizes);
+
+/** Deliberately corrupts one sample of a rendered result, for proving a comparison can fail.
+
+    **A driver that cannot demonstrate its own failure has not demonstrated anything**, and
+    `blockSizeInvariance` makes the strongest claim in this harness: sample-exact across four block
+    sizes. The ways that can be falsely true are all quiet — a render that never varied, a comparison
+    against itself, a tolerance wide enough to swallow the difference, a driver that prepared once and
+    reported four times.
+
+    Sample-exactness means the tolerance is zero, so a one-LSB perturbation must register. If it does
+    not, the comparison is not what it says it is.
+
+    @param channel  which channel to disturb
+    @param index    which sample
+*/
+void perturbByOneLsb (std::vector<std::vector<float>>& rendered, size_t channel, size_t index);
+
+/** Compares two rendered results. Exposed so a test can prove the comparison detects a difference. */
+InvarianceResult compareRenders (const std::vector<std::vector<float>>& a,
+                                 const std::vector<std::vector<float>>& b);
 
 /** Renders the same input offline and real-time, and compares.
 
