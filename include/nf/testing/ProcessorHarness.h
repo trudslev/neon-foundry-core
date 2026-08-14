@@ -383,9 +383,26 @@ std::vector<MagnitudeRow> measureProcessorMagnitudeResponse (juce::AudioProcesso
 
 /** The largest difference, in dB, between two responses measured at the same frequencies.
 
-    **This is the rate-invariance test for a filter**: the response at 500 Hz must be the same at
-    44.1 kHz and at 192 kHz. Comparing responses at fixed frequencies in Hz needs no -3 dB search and
-    no FFT — if the curve moved, the cutoff moved.
+    **A screen for "did anything change", and NOT a classifier. Do not rank a finding with it.**
+
+    This comment used to end "if the curve moved, the cutoff moved", and that sentence is false in
+    the one case the function gets reached for. It collapses a whole curve to a single number, so a
+    corner that has SHIFTED and a far field whose SHAPE differs come back indistinguishable —
+    and a one-pole's far field legitimately depends on normalised frequency, so two correct filters
+    at two sample rates differ there by design.
+
+    Measured, on Reflect-84's dampHF at 2 kHz: this function returned 1.861 dB and was read as a
+    moved cutoff. The corner is -2.981 dB at 44.1 kHz and -3.009 dB at 192 kHz — correct at both,
+    to 0.03 dB. The entire 1.861 dB was the far field at 16 kHz, which is 0.36 of Nyquist at one
+    rate and 0.083 at the other. A range defect would have been filed as a rate defect.
+
+    **To ask where a corner is, measure AT the corner**: a correct one-pole reads -3.01 dB at its
+    own cutoff whatever the sample rate. Report the curves too — they are what makes the corner and
+    the far field separable — but classify from the corner.
+
+    Second instance of this shape in the suite, after gradient-per-pixel. Aggregates are where it
+    keeps happening: one number reads as a finding, survives review because it is precise, and says
+    nothing about the axis it collapsed.
 */
 double largestResponseDifferenceDb (const std::vector<MagnitudeRow>& a,
                                     const std::vector<MagnitudeRow>& b);
