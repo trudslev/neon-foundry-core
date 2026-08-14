@@ -108,6 +108,19 @@ namespace
 
                     if (emitSubnormals)
                     {
+                        // **The tail is EXCITED BY INPUT, which it was not until render() began
+                        // resetting.** It used to be armed once in prepareToPlay and zeroed by
+                        // reset(), so the moment render() gained its reset() the probe emitted
+                        // nothing and the long-tail case failed with peak 0.
+                        //
+                        // Arming from input is not a workaround for that: it is what a decaying tail
+                        // actually is, and it makes the probe model the thing it stands in for. The
+                        // two other consumers stay correct for the same reason — exerciseLifecycle
+                        // excites, resets, then measures a SILENT block, and probeDenormalGuard
+                        // never resets at all, so it still starts from prepareToPlay's 1.0.
+                        if (v != 0.0f)
+                            tail = 1.0f;
+
                         // **0.9999 per sample, not 0.5, and the rate is the point of the test.**
                         // Halving reaches subnormal in ~126 samples and zero in ~150, so it is over
                         // before the tail scan begins — which made the "short tail misses it" case
