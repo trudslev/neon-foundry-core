@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <atomic>
+#include <cmath>
 #include <functional>
 #include <vector>
 
@@ -246,6 +247,39 @@ void perturbByOneLsb (std::vector<std::vector<float>>& rendered, size_t channel,
 /** Compares two rendered results. Exposed so a test can prove the comparison detects a difference. */
 InvarianceResult compareRenders (const std::vector<std::vector<float>>& a,
                                  const std::vector<std::vector<float>>& b);
+
+/** One rate in a sample-rate sweep: what was asked for, what the processor adopted, and what a
+    duration-bearing quantity measured there.
+
+    **A rate that was requested but not adopted is a FINDING, not a row to drop.** A casting that
+    clamps 192 kHz is making a statement about what it supports, and silently skipping it would
+    present as a clean sweep. `adopted` is read off the processor, never echoed from the request.
+*/
+struct SampleRateRow
+{
+    double requested = 0.0;
+    double adopted = 0.0;
+    int adoptedBlockSize = 0;
+    double measuredSeconds = -1.0;   ///< the duration-bearing quantity, in ITS OWN units
+
+    bool rateWasAdopted() const noexcept { return std::abs (adopted - requested) < 1.0; }
+    juce::String describe() const;
+};
+
+/** Sweeps sample rates and measures a decay in SECONDS at each, reading the adopted rate back.
+
+    **Sample-exact is the wrong bar across rates and would fail every correct casting** — the same
+    seconds of audio at 44.1 and 96 kHz cannot be identical sample-for-sample. What must hold is that
+    a quantity with a duration keeps its value in its own units: an RT60 of 4.8 s stays 4.8 s.
+
+    The caller decides what "excited" means and what threshold counts as decayed, because which of
+    its parameters carry a duration is the casting's knowledge, not core's.
+*/
+std::vector<SampleRateRow> sampleRateSweep (juce::AudioProcessor& processor,
+                                            RenderSpec spec,
+                                            const std::vector<double>& rates,
+                                            int maxTailBlocks = 8000,
+                                            float threshold = 1.0e-5f);
 
 /** Renders the same input offline and real-time, and compares.
 

@@ -647,3 +647,50 @@ InvarianceResult compareRenders (const std::vector<std::vector<float>>& a,
 }
 
 }
+
+namespace nf::testing
+{
+
+juce::String SampleRateRow::describe() const
+{
+    juce::String s;
+    s << "requested " << juce::String (requested, 1) << " Hz -> ADOPTED "
+      << juce::String (adopted, 1) << " Hz, block " << adoptedBlockSize;
+
+    if (! rateWasAdopted())
+        s << "  <- **RATE NOT ADOPTED** — this row is a finding, not a measurement";
+
+    s << ": ";
+    s << (measuredSeconds >= 0.0 ? juce::String (measuredSeconds, 4) + " s"
+                                 : juce::String ("never reached threshold"));
+    return s;
+}
+
+std::vector<SampleRateRow> sampleRateSweep (juce::AudioProcessor& processor,
+                                            RenderSpec spec,
+                                            const std::vector<double>& rates,
+                                            int maxTailBlocks,
+                                            float threshold)
+{
+    std::vector<SampleRateRow> rows;
+    rows.reserve (rates.size());
+
+    for (auto rate : rates)
+    {
+        auto s = spec;
+        s.sampleRate = rate;
+
+        const auto decay = measureDecaySeconds (processor, s, maxTailBlocks, threshold);
+
+        SampleRateRow row;
+        row.requested = rate;
+        row.adopted = decay.actualSampleRate;
+        row.adoptedBlockSize = decay.actualBlockSize;
+        row.measuredSeconds = decay.secondsToThreshold;
+        rows.push_back (row);
+    }
+
+    return rows;
+}
+
+}

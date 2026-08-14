@@ -41,10 +41,17 @@ namespace
         // The checker looked broken when the PROBE was. A real casting does real arithmetic; the
         // probe has to as well.
         float unityGain = 1.0f;
+
+        // A probe that refuses rates above a ceiling, so the sweep can be shown to NOTICE rather
+        // than silently reporting whatever it was given.
+        double clampRateAbove = 0.0;
         int  latencyToIntroduce = 0;
 
-        void prepareToPlay (double, int samplesPerBlock) override
+        void prepareToPlay (double rate, int samplesPerBlock) override
         {
+            if (clampRateAbove > 0.0 && rate > clampRateAbove)
+                setRateAndBufferSizeDetails (clampRateAbove, samplesPerBlock);
+
             scratch.assign ((size_t) samplesPerBlock, 0.0f);
             delayLine.assign ((size_t) juce::jmax (1, latencyToIntroduce), 0.0f);
             writeIndex = 0;
@@ -397,6 +404,66 @@ public:
                               "the processor was prepared at a different size than the sweep "
                               "requested, so this row is not the measurement it appears to be");
             }
+        }
+
+
+        beginTest ("The sample-rate sweep reports the ADOPTED rate, and flags one that was refused");
+        {
+            // **A rate requested but not adopted is a finding, not a row to drop.** A casting that
+            // clamps 192 kHz is making a statement about what it supports; silently skipping it
+            // would present as a clean sweep. Proved by causing it.
+            ProbeProcessor p;
+            p.emitSubnormals = true;          // gives it a decaying tail to measure
+
+            nf::testing::RenderSpec spec;
+            spec.numBlocks = 8;
+
+            const std::vector<double> rates { 44100.0, 48000.0, 96000.0, 192000.0 };
+
+            const auto honest = nf::testing::sampleRateSweep (p, spec, rates, 2000);
+            for (const auto& row : honest)
+                logMessage ("  " + row.describe());
+
+            for (const auto& row : honest)
+                expect (row.rateWasAdopted(),
+                        "a rate was not adopted by a processor that accepts all of them: "
+                            + row.describe());
+
+            // **And the seconds comparison must be able to SEE a rate-dependent decay**, or
+            // reporting seconds achieves nothing over reporting sample counts. This probe decays
+            // per-sample with no rate compensation, so it is rate-dependent by construction and its
+            // decay must roughly halve as the rate doubles:
+            //
+            //   44 100 -> 1.2307 s    96 000 -> 0.5653 s
+            //   48 000 -> 1.1307 s   192 000 -> 0.2827 s
+            //
+            // A driver that reported four equal figures here would be measuring sample counts and
+            // calling them seconds — which is the exact failure the seconds bar exists to prevent,
+            // and it would look like perfect rate-invariance.
+            expectGreaterThan (honest[1].measuredSeconds, honest[2].measuredSeconds * 1.5,
+                               "doubling the rate did not shorten this probe's decay in seconds, so "
+                               "the seconds measurement cannot detect rate dependence and every "
+                               "casting's rate row from it is worthless");
+
+            expectGreaterThan (honest[2].measuredSeconds, honest[3].measuredSeconds * 1.5,
+                               "the same, between 96 k and 192 k");
+
+            // Now refuse everything above 48 k, and the sweep must say so.
+            ProbeProcessor clamped;
+            clamped.emitSubnormals = true;
+            clamped.clampRateAbove = 48000.0;
+
+            const auto refused = nf::testing::sampleRateSweep (clamped, spec, rates, 2000);
+            for (const auto& row : refused)
+                logMessage ("  clamped: " + row.describe());
+
+            expect (refused[2].rateWasAdopted() == false,
+                    "96 kHz was refused by the processor and the sweep did not notice: "
+                        + refused[2].describe());
+            expect (refused[3].rateWasAdopted() == false,
+                    "192 kHz was refused and the sweep did not notice: " + refused[3].describe());
+            expect (refused[0].rateWasAdopted(),
+                    "44.1 kHz was within the clamp and should have been adopted");
         }
 
         beginTest ("Offline vs real-time knows whether setNonRealtime actually took effect");
