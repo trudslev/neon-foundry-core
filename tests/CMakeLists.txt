@@ -11,7 +11,8 @@ target_sources(NeonFoundryCoreTests PRIVATE
     MenuMetricsTests.cpp
     PrintedScaleTests.cpp
     UserEditGateTests.cpp
-    ProcessorHarnessTests.cpp)
+    ProcessorHarnessTests.cpp
+    BlockChunkingTests.cpp)
 
 target_compile_definitions(NeonFoundryCoreTests PRIVATE
     JUCE_WEB_BROWSER=0
