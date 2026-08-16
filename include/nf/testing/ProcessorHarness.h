@@ -228,6 +228,72 @@ std::vector<InvarianceResult> blockSizeInvariance (juce::AudioProcessor& process
                                                    RenderSpec spec,
                                                    const std::vector<int>& blockSizes);
 
+/** Renders `spec`'s blocks WITHOUT preparing first — the caller owns the lifecycle.
+
+    **This exists because `render` prepares by construction, and that made one sequence unreachable
+    rather than merely untested.** `render` calls `setRateAndBufferSizeDetails`, `prepareToPlay` and
+    `reset` on every invocation, so *prepare once → render → `reset()` → render* could not be
+    expressed through this harness at all. Every premise check in the suite was therefore a **prepare**
+    check, by construction, and nothing said so until `reproducibleAcrossReset` needed it.
+
+    Use `render` unless you are deliberately controlling the lifecycle. This entry point makes no
+    guarantee that the processor is in any particular state — that is the caller's business, which is
+    the whole point of it.
+*/
+std::vector<std::vector<float>> renderBlocks (juce::AudioProcessor& processor, const RenderSpec& spec);
+
+/** What `reproducibleAcrossReset` found: the reset arm, and the prepare arm it is read against. */
+struct ResetReproducibility
+{
+    /** Two renders of one instance, each preceded by `reset()` and by nothing else. */
+    InvarianceResult acrossReset;
+
+    /** The same instance through the ordinary `render` path twice — `prepareToPlay` and `reset`
+        before each. **Reported beside the result rather than checked once**, because a processor
+        that cannot reproduce across prepare cannot be asked anything about reset, and the difference
+        between the two arms is the whole finding. */
+    InvarianceResult acrossPrepare;
+
+    /** True when the prepare arm held, so the reset arm means what it claims. */
+    bool premiseHeld() const noexcept { return acrossPrepare.sampleExact; }
+
+    juce::String describe() const;
+};
+
+/** Does `reset()` return the processor to the same state, whatever that state is?
+
+    Prepare once. Then `reset()`, render, `reset()`, render — and compare. **No `prepareToPlay`
+    between the two renders**, which is the entire point and the reason `renderBlocks` exists.
+
+    ## The invariant is deliberately narrow
+
+    It asserts that `reset()` reaches a fixed point, **not** that `reset()` is equivalent to
+    `prepareToPlay`. The wider claim is tempting and wrong for this suite: TapeRot re-arms a model
+    switch on every *prepare* — 26.75 % of peak in FADE, 97.55 % in CLUNK — so a driver comparing
+    reset against prepare would report that stage-2 defect here, in a driver written to ask about
+    generators. Two renders both preceded by `reset()` cancel it out.
+
+    ## What it is actually for
+
+    Four generators across three castings are seeded in `prepare()` and nowhere else, so a host
+    `reset()` — a transport locate, a buffer clear — leaves their streams running. Whether that is a
+    defect or the correct contract was, until this driver, a question nobody could measure: the
+    argument *"what a plugin owes a reset is a cleared tail, not a rewound hiss"* decides what
+    `reset()` should do and establishes nothing about what it does.
+
+    ## Two ways a green result would prove nothing
+
+    **The arm must DRIVE the generator.** A generator inaudible at the casting's defaults reports
+    reset-clean whatever `reset()` does — which is exactly how Fifth Member's and Elmer's
+    energy-after-reset rows came back 0.000 twice for a coincidence. Set the parameters that engage
+    it, the way a feedback arm engages feedback.
+
+    **And read `premiseHeld()` first.** A configuration that is irreproducible across prepare —
+    TapeRot with FAILURE up, whose engine is seeded nowhere and whose self-comparison is 0.914 — will
+    fail the reset arm for a reason this driver is not asking about.
+*/
+ResetReproducibility reproducibleAcrossReset (juce::AudioProcessor& processor, const RenderSpec& spec);
+
 /** Timing of a repeated call, in nanoseconds. Median and p95 rather than mean: a lock stall is a
     tail event, and a mean hides one block in fifty behind forty-nine quick ones. */
 struct TimingReport

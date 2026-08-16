@@ -31,6 +31,24 @@ namespace
         bool emitSubnormals = false;
         bool emitNaN = false;
         bool keepTailThroughReset = false;
+
+        /*  A generator, and separate switches for each of the two places it could be restored.
+
+            **These three states are a model of a real finding rather than an invented fault.** Four
+            generators across three castings are seeded in `prepare()` and nowhere else, and TapeRot's
+            `FailureEngine` is seeded at construction and nowhere at all:
+
+              | seedOnPrepare | seedOnReset | Models | Expected |
+              |---|---|---|---|
+              | true | true | Chorus-60's `CharacterStage` | both arms exact |
+              | true | **false** | `NoiseSource`, `WowFlutter`, `LfoBank`, `CharacterEngine` | prepare exact, **reset DIFFERS** |
+              | **false** | false | `FailureEngine` | **premise fails** — the reset arm means nothing |
+
+            Default OFF for the noise itself, so every other test in this file behaves as it did.
+        */
+        bool emitGeneratorNoise = false;
+        bool seedGeneratorOnPrepare = true;
+        bool seedGeneratorOnReset = false;
         // **Default OFF**, so every other test in this file behaves as it did: the subnormal-tail
         // case needs subnormals to survive, and flush-to-zero would erase the thing it measures.
         bool guardAgainstDenormals = false;
@@ -57,6 +75,9 @@ namespace
             writeIndex = 0;
             tail = 1.0f;
             blockCounter = 0;
+
+            if (seedGeneratorOnPrepare)
+                generator = juce::Random (generatorSeed);
         }
 
         void releaseResources() override {}
@@ -131,6 +152,11 @@ namespace
                         v += tail;
                     }
 
+                    // Well above sample-exactness and well below anything that would disturb the
+                    // other cases, which all leave this switch off.
+                    if (emitGeneratorNoise)
+                        v += (generator.nextFloat() * 2.0f - 1.0f) * 1.0e-3f;
+
                     if (emitNaN)
                         v = std::numeric_limits<float>::quiet_NaN();
 
@@ -154,6 +180,9 @@ namespace
                 tail = 0.0f;
                 std::fill (delayLine.begin(), delayLine.end(), 0.0f);
             }
+
+            if (seedGeneratorOnReset)
+                generator = juce::Random (generatorSeed);
         }
 
         int getLatencySamples() const { return latencyToIntroduce; }
@@ -174,9 +203,12 @@ namespace
         void setStateInformation (const void*, int) override {}
 
     private:
+        static constexpr juce::int64 generatorSeed = 12345;
+
         std::vector<float> scratch, delayLine;
         int writeIndex = 0, blockCounter = 0;
         float tail = 1.0f;
+        juce::Random generator { generatorSeed };
     };
 }
 
@@ -281,6 +313,99 @@ public:
             const auto tidy = nf::testing::exerciseLifecycle (p, spec);
             expectLessThan (tidy.tailEnergyAfterReset, leaky.tailEnergyAfterReset,
                             "reset made no difference: " + tidy.describe());
+        }
+
+        beginTest ("reproducibleAcrossReset separates a restored generator from a continued one");
+        {
+            /*  **The driver is proved here, in core, before any casting exercises it** — because a
+                driver first run against the thing it is meant to judge cannot be distinguished from
+                a driver that reports whatever it was going to report.
+
+                Three states, and each models something real rather than an invented fault:
+
+                  - seeded on prepare AND reset — Chorus-60's `CharacterStage` after stage 0.5
+                  - seeded on prepare ONLY — the four generators in the other three castings
+                  - seeded on NEITHER — TapeRot's `FailureEngine`, seeded at construction and never
+                    again, whose measured self-comparison at FAILURE 100 is 0.914
+
+                The third arm is what makes `premiseHeld()` load-bearing rather than decorative: it is
+                the one configuration where the reset arm differs for a reason that has nothing to do
+                with reset.
+            */
+            nf::testing::RenderSpec spec;
+            spec.blockSize = 256;
+            spec.numBlocks = 8;
+
+            ProbeProcessor p;
+            p.emitGeneratorNoise = true;
+
+            // 1 — restored in reset(). Both arms must be exact.
+            p.seedGeneratorOnPrepare = true;
+            p.seedGeneratorOnReset = true;
+            const auto restored = nf::testing::reproducibleAcrossReset (p, spec);
+            logMessage ("  seeded prepare+reset -> " + restored.describe());
+            expect (restored.premiseHeld(), "the premise arm failed on a fully restored generator");
+            expect (restored.acrossReset.sampleExact,
+                    "a generator restored in reset() was still reported as differing across reset: "
+                        + restored.acrossReset.describe());
+
+            // 2 — the real shape. Prepare restores it; reset does not.
+            p.seedGeneratorOnReset = false;
+            const auto continued = nf::testing::reproducibleAcrossReset (p, spec);
+            logMessage ("  seeded prepare only  -> " + continued.describe());
+            expect (continued.premiseHeld(),
+                    "the premise arm failed on a generator that IS restored by prepare, so this "
+                    "fixture cannot say anything about reset: " + continued.acrossPrepare.describe());
+            expect (! continued.acrossReset.sampleExact,
+                    "**THE DRIVER CANNOT FAIL.** A generator seeded in prepare() and not in reset() "
+                    "continued its stream across reset by construction, and the driver reported the "
+                    "two renders identical.");
+
+            // 3 — seeded nowhere. The premise must catch it rather than the reset arm taking credit.
+            p.seedGeneratorOnPrepare = false;
+            const auto unseeded = nf::testing::reproducibleAcrossReset (p, spec);
+            logMessage ("  seeded nowhere       -> " + unseeded.describe());
+            expect (! unseeded.premiseHeld(),
+                    "a generator seeded nowhere was reported reproducible across prepare, so the "
+                    "premise arm is not measuring anything");
+            expect (unseeded.describe().contains ("PREMISE FAILED"),
+                    "describe() reported a failed premise without saying so, which is how a reset "
+                    "figure gets read as a reset finding");
+        }
+
+        beginTest ("renderBlocks does not prepare, which is the whole reason it exists");
+        {
+            /*  Guards the split itself. If `renderBlocks` ever regains a `prepareToPlay`, every
+                result above silently becomes a prepare check again — the exact defect this driver
+                was written to escape, restored invisibly.
+
+                Shown by causing it: a generator seeded only in prepare must produce DIFFERENT output
+                from two `renderBlocks` calls with nothing between them, and IDENTICAL output from
+                two `render` calls. Same processor, same spec, one difference. */
+            nf::testing::RenderSpec spec;
+            spec.blockSize = 256;
+            spec.numBlocks = 4;
+
+            ProbeProcessor p;
+            p.emitGeneratorNoise = true;
+            p.seedGeneratorOnPrepare = true;
+            p.seedGeneratorOnReset = false;
+
+            p.setRateAndBufferSizeDetails (spec.sampleRate, spec.blockSize);
+            p.prepareToPlay (spec.sampleRate, spec.blockSize);
+
+            const auto bare = nf::testing::compareRenders (nf::testing::renderBlocks (p, spec),
+                                                           nf::testing::renderBlocks (p, spec));
+            expect (! bare.sampleExact,
+                    "two renderBlocks calls with nothing between them produced identical output, so "
+                    "something in that path is restoring state — it is preparing again: "
+                        + bare.describe());
+
+            const auto prepared = nf::testing::compareRenders (nf::testing::render (p, spec),
+                                                               nf::testing::render (p, spec));
+            expect (prepared.sampleExact,
+                    "render() no longer restores this processor, so the contrast above is not the "
+                    "one being claimed: " + prepared.describe());
         }
 
         beginTest ("Impulse latency agrees with what a processor introduces");

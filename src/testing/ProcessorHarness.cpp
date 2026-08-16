@@ -216,6 +216,21 @@ std::vector<std::vector<float>> render (juce::AudioProcessor& processor, const R
     // rather than through this function.
     processor.reset();
 
+    return renderBlocks (processor, spec);
+}
+
+/*  The block loop alone, with no lifecycle call in front of it.
+
+    **Factored out because `render`'s preparing was not a detail — it made a sequence unreachable.**
+    Every premise check in this suite calls `render`, and `render` prepares, so *prepare once →
+    render → reset → render* could not be expressed. That made every premise check a **prepare**
+    check by construction, which is a stronger and narrower claim than any of them was reading as.
+
+    Splitting the function is the whole fix: `render` is unchanged for its callers, and a driver that
+    needs to own the lifecycle now has somewhere to stand.
+*/
+std::vector<std::vector<float>> renderBlocks (juce::AudioProcessor& processor, const RenderSpec& spec)
+{
     juce::AudioBuffer<float> buffer (spec.numChannels, spec.blockSize);
     juce::MidiBuffer midi;
 
@@ -303,6 +318,46 @@ juce::String InvarianceResult::describe() const
          + "DIFFERS: max |delta| " + juce::String (maxAbsDifference, 9)
          + ", first at sample " + juce::String (firstDivergentSample)
          + " of " + juce::String (comparedSamples);
+}
+
+juce::String ResetReproducibility::describe() const
+{
+    juce::String s;
+
+    // The premise leads. A reset arm read without it is the mistake this struct exists to prevent.
+    s << (premiseHeld() ? "premise HELD across prepare"
+                        : "**PREMISE FAILED across prepare — the reset arm below means nothing**: "
+                              + acrossPrepare.describe())
+      << "; across reset -> " << acrossReset.describe();
+
+    return s;
+}
+
+ResetReproducibility reproducibleAcrossReset (juce::AudioProcessor& processor, const RenderSpec& spec)
+{
+    ResetReproducibility result;
+
+    // The premise arm first, through the ordinary path — prepareToPlay and reset before each render.
+    result.acrossPrepare = compareRenders (render (processor, spec), render (processor, spec));
+
+    // The reset arm. Prepare ONCE, here, and never again inside this function.
+    processor.setRateAndBufferSizeDetails (spec.sampleRate, spec.blockSize);
+    processor.prepareToPlay (spec.sampleRate, spec.blockSize);
+
+    processor.reset();
+    const auto a = renderBlocks (processor, spec);
+
+    processor.reset();
+    const auto b = renderBlocks (processor, spec);
+
+    result.acrossReset = compareRenders (a, b);
+
+    // Both arms carry the same readback for the same reason every other driver does: a row that
+    // reports a block size it did not prepare at is a row about something else.
+    result.acrossReset.actualBlockSize = processor.getBlockSize();
+    result.acrossReset.actualSampleRate = processor.getSampleRate();
+
+    return result;
 }
 
 std::vector<InvarianceResult> blockSizeInvariance (juce::AudioProcessor& processor,
