@@ -91,7 +91,17 @@ public:
     */
     int frees() const noexcept;
 
-    /** True if anything allocated OR freed. */
+    /** How much of `count()`/`bytes()` arrived through `malloc` rather than `operator new`.
+
+        `juce::AudioBuffer::setSize` allocates through `HeapBlock` -> `std::malloc`, so before the
+        interposition every buffer growth in the suite counted zero — indistinguishable from a
+        processor that does not allocate. These report the previously-invisible share directly, so a
+        corrected row can state what the correction added rather than being diffed against a figure
+        the older instrument produced. */
+    int countViaMalloc() const noexcept;
+    size_t bytesViaMalloc() const noexcept;
+
+    /** True if anything allocated. */
     bool sawAllocation() const noexcept { return count() > 0; }
     bool sawAnyHeapActivity() const noexcept { return count() > 0 || frees() > 0; }
 
@@ -108,6 +118,10 @@ struct AllocationReport
     int allocations = 0;
     size_t bytes = 0;
     int frees = 0;
+
+    /** The `malloc` share of `allocations`/`bytes` — see `AllocationSentinel::countViaMalloc`. */
+    int allocationsViaMalloc = 0;
+    size_t bytesViaMalloc = 0;
 
     /** **No heap activity at all — allocations AND frees.**
 

@@ -27,12 +27,33 @@ namespace
     std::atomic<size_t> allocationBytes { 0 };
     std::atomic<int> freeCount { 0 };
 
-    inline void note (size_t bytes) noexcept
+    /*  **A SUBSET of the two above, counting only what arrives through `malloc` rather than through
+        `operator new`.**
+
+        It exists so that a corrected figure can say what the correction added, without comparing
+        against a figure taken by the older instrument. The suite's own rule is that a measurement
+        taken with an instrument since found incomplete does not carry forward — so the honest form
+        of "the interposition changed this row" is a split the corrected instrument reports itself,
+        not a diff against a withdrawn number.
+
+        It is also the standing check that the interposition is still hooked. A build where the
+        `extern "C"` overrides stop taking reports every row as zero-via-malloc, which is visible,
+        where the total alone would simply shrink back to what it used to be and read as clean. */
+    std::atomic<int> mallocCount { 0 };
+    std::atomic<size_t> mallocBytes { 0 };
+
+    inline void note (size_t bytes, bool viaMalloc = false) noexcept
     {
         if (armed.load (std::memory_order_relaxed))
         {
             allocationCount.fetch_add (1, std::memory_order_relaxed);
             allocationBytes.fetch_add (bytes, std::memory_order_relaxed);
+
+            if (viaMalloc)
+            {
+                mallocCount.fetch_add (1, std::memory_order_relaxed);
+                mallocBytes.fetch_add (bytes, std::memory_order_relaxed);
+            }
         }
     }
 
@@ -110,14 +131,14 @@ namespace
 */
 extern "C" void* malloc (size_t size)
 {
-    note (size);
+    note (size, true);
     return rawAlloc (size);
 }
 
 extern "C" void* calloc (size_t n, size_t size)
 {
     const size_t total = n * size;
-    note (total);
+    note (total, true);
 
     if (auto* p = rawAlloc (total))
     {
@@ -130,7 +151,7 @@ extern "C" void* calloc (size_t n, size_t size)
 
 extern "C" void* realloc (void* old, size_t size)
 {
-    note (size);
+    note (size, true);
 
     auto* p = rawAlloc (size);
 
@@ -200,6 +221,8 @@ AllocationSentinel::AllocationSentinel()
     allocationCount.store (0, std::memory_order_relaxed);
     allocationBytes.store (0, std::memory_order_relaxed);
     freeCount.store (0, std::memory_order_relaxed);
+    mallocCount.store (0, std::memory_order_relaxed);
+    mallocBytes.store (0, std::memory_order_relaxed);
     armed.store (true, std::memory_order_relaxed);
 }
 
@@ -223,6 +246,16 @@ int AllocationSentinel::frees() const noexcept
     return freeCount.load (std::memory_order_relaxed);
 }
 
+int AllocationSentinel::countViaMalloc() const noexcept
+{
+    return mallocCount.load (std::memory_order_relaxed);
+}
+
+size_t AllocationSentinel::bytesViaMalloc() const noexcept
+{
+    return mallocBytes.load (std::memory_order_relaxed);
+}
+
 //==============================================================================
 juce::String AllocationReport::describe() const
 {
@@ -241,6 +274,13 @@ juce::String AllocationReport::describe() const
         // instrument would have called clean.
         if (allocations == 0)
             s << "  <- FREES ONLY: invisible to an allocation-only detector";
+
+        // **The share the older, operator-new-only instrument could not see**, stated on the row
+        // rather than left to be inferred. `AudioBuffer::setSize` reaches `std::malloc` through
+        // `HeapBlock`, so a row that is entirely malloc is a row that used to read as clean.
+        if (allocationsViaMalloc > 0)
+            s << "  [" << allocationsViaMalloc << " via malloc, " << (int) bytesViaMalloc
+              << " bytes — invisible before the interposition]";
     }
 
     return s;
@@ -296,6 +336,8 @@ AllocationReport probeProcessBlockAllocation (juce::AudioProcessor& processor,
         report.allocations += sentinel.count();
         report.bytes += sentinel.bytes();
         report.frees += sentinel.frees();
+        report.allocationsViaMalloc += sentinel.countViaMalloc();
+        report.bytesViaMalloc += sentinel.bytesViaMalloc();
     }
 
     return report;

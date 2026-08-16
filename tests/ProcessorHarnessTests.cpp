@@ -407,13 +407,14 @@ public:
             juce::AudioBuffer<float> buffer (2, 64);
             buffer.clear();
 
-            int allocs = 0;
+            int allocs = 0, viaMalloc = 0;
             size_t bytes = 0;
             {
                 const nf::testing::AllocationSentinel s;
                 buffer.setSize (2, 65536, false, false, false);   // must reach std::malloc
                 allocs = s.count();
                 bytes = s.bytes();
+                viaMalloc = s.countViaMalloc();
             }
 
             logMessage ("  AudioBuffer 2 x 64 -> 2 x 65536 grew by " + juce::String (allocs)
@@ -430,6 +431,20 @@ public:
                                "the growth was seen but its SIZE was not: 2 x 65536 floats is at "
                                "least 524288 bytes, and a smaller figure means something other than "
                                "the buffer was counted");
+
+            /*  **The split, asserted rather than merely reported — this is what keeps the hook
+                honest over time.**
+
+                A buffer growth reaches `std::malloc` and nothing else, so ALL of it must be counted
+                on the malloc side. If the `extern "C"` overrides ever stop taking — a linker
+                change, a platform without symbol interposition, a build that drops this translation
+                unit — the total would quietly fall back to whatever `operator new` sees, which for a
+                growth is zero, and every category-1 row would read clean again exactly as it did
+                before. Asserting the SHARE rather than the total is what makes that visible. */
+            expectEquals (viaMalloc, allocs,
+                          "an AudioBuffer growth was counted, but not through the malloc "
+                          "interposition — so the figure came from somewhere else and the "
+                          "interposition is not doing the work this test claims it does");
 
             // The complementary direction: no growth, no allocation. Without it the arm above could
             // be counting something incidental that happens on every armed region.
