@@ -389,6 +389,64 @@ public:
                     "figure gets read as a reset finding");
         }
 
+        beginTest ("The sentinel sees an AudioBuffer GROWTH — malloc, not just operator new");
+        {
+            /*  **This arm is the whole point of the interposition, and without it a green result
+                proves nothing.**
+
+                `juce::AudioBuffer::setSize` allocates through `HeapBlock`
+                (`juce_AudioSampleBuffer.h:442` -> `juce_HeapBlock.h:263`), which calls `std::malloc`
+                DIRECTLY. The sentinel used to override `operator new`/`new[]`/`delete`/`delete[]`
+                and nothing else, so a buffer growth was invisible to it and reported exactly as a
+                clean row does.
+
+                A sentinel that compiles and hooks nothing counts zero, which is indistinguishable
+                from a processor that does not allocate. So the growth is CAUSED here and the catch
+                asserted — if the interposition ever stops taking, this fails loudly instead of the
+                suite quietly going back to measuring half of what it claims. */
+            juce::AudioBuffer<float> buffer (2, 64);
+            buffer.clear();
+
+            int allocs = 0;
+            size_t bytes = 0;
+            {
+                const nf::testing::AllocationSentinel s;
+                buffer.setSize (2, 65536, false, false, false);   // must reach std::malloc
+                allocs = s.count();
+                bytes = s.bytes();
+            }
+
+            logMessage ("  AudioBuffer 2 x 64 -> 2 x 65536 grew by " + juce::String (allocs)
+                            + " allocation(s), " + juce::String ((int) bytes) + " bytes");
+
+            expectGreaterThan (allocs, 0,
+                               "**THE SENTINEL STILL CANNOT SEE AudioBuffer GROWTH.** setSize reaches "
+                               "std::malloc through HeapBlock, so an operator-new-only detector counts "
+                               "zero here — and zero is exactly what a clean row looks like. Every "
+                               "category 1 result is unmeasured with respect to buffer growth until "
+                               "this passes.");
+
+            expectGreaterThan ((int) bytes, 65536 * 2 * (int) sizeof (float) - 1,
+                               "the growth was seen but its SIZE was not: 2 x 65536 floats is at "
+                               "least 524288 bytes, and a smaller figure means something other than "
+                               "the buffer was counted");
+
+            // The complementary direction: no growth, no allocation. Without it the arm above could
+            // be counting something incidental that happens on every armed region.
+            int steady = 0;
+            {
+                const nf::testing::AllocationSentinel s;
+                buffer.setSize (2, 32768, false, false, true);    // avoidReallocating: fits already
+                steady = s.count();
+            }
+
+            logMessage ("  shrink within capacity -> " + juce::String (steady) + " allocation(s)");
+
+            expectEquals (steady, 0,
+                          "a setSize that fits inside the existing capacity allocated, so the arm "
+                          "above is not measuring growth specifically");
+        }
+
         beginTest ("The reset driver's WARM-UP is what it claims, shown by causing the thing it removes");
         {
             /*  **This arm exists because the driver shipped without it and Reflect-84 caught it.**

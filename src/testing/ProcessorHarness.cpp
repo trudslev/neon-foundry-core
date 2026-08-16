@@ -2,11 +2,16 @@
 
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <algorithm>
 #include <chrono>
 #include <thread>
 #include <new>
+
+#if defined (__APPLE__)
+ #include <malloc/malloc.h>
+#endif
 
 namespace
 {
@@ -48,6 +53,103 @@ namespace
 }
 
 //==============================================================================
+/*  **The RAW allocator, beneath every override below.**
+
+    Everything here has to reach the real allocator without going back through the interposed
+    `malloc`, or the first allocation recurses forever. On Apple that is the default malloc zone
+    directly; a pointer is freed to the zone it actually came from, because freeing to the wrong zone
+    is undefined and the process allocates from more than one.
+*/
+namespace
+{
+    inline void* rawAlloc (size_t size) noexcept
+    {
+       #if defined (__APPLE__)
+        return malloc_zone_malloc (malloc_default_zone(), size == 0 ? 1 : size);
+       #else
+        return std::malloc (size == 0 ? 1 : size);
+       #endif
+    }
+
+    inline void rawFree (void* p) noexcept
+    {
+        if (p == nullptr)
+            return;
+
+       #if defined (__APPLE__)
+        if (auto* z = malloc_zone_from_ptr (p))
+            malloc_zone_free (z, p);
+        else
+            std::free (p);
+       #else
+        std::free (p);
+       #endif
+    }
+}
+
+/*  ## MALLOC AND FREE, not just operator new — and this was a MEASUREMENT GAP, not a defect
+
+    `juce::AudioBuffer::setSize` allocates through `HeapBlock`
+    (`juce_AudioSampleBuffer.h:442` -> `juce_HeapBlock.h:263`), which calls `std::malloc` DIRECTLY.
+    This sentinel overrode `operator new` / `new[]` / `delete` / `delete[]` and nothing else, so
+    every `AudioBuffer` growth in the suite was invisible to it and every category-1 "clean" row was
+    UNMEASURED with respect to buffer growth rather than clean.
+
+    The rows that reported clean were not wrong about what they measured — Gatecrasher's 16384 bytes
+    are two `std::vector` resizes, and a vector goes through `operator new`. They were wrong about
+    what they had covered.
+
+    **Interposed by symbol replacement**, which works because these definitions live in the main
+    executable and dyld searches it first. There is no `#if` around whether it works: the test that
+    accompanies this GROWS an AudioBuffer inside the armed region and asserts the sentinel catches
+    it, so a build where the interposition does not take fails loudly rather than reporting clean —
+    which is exactly how it reported clean before.
+
+    `operator new` no longer calls `std::malloc`, because that would now route through the
+    interposed `malloc` and count twice. Every override notes once and then calls `rawAlloc`.
+*/
+extern "C" void* malloc (size_t size)
+{
+    note (size);
+    return rawAlloc (size);
+}
+
+extern "C" void* calloc (size_t n, size_t size)
+{
+    const size_t total = n * size;
+    note (total);
+
+    if (auto* p = rawAlloc (total))
+    {
+        std::memset (p, 0, total == 0 ? 1 : total);
+        return p;
+    }
+
+    return nullptr;
+}
+
+extern "C" void* realloc (void* old, size_t size)
+{
+    note (size);
+
+    auto* p = rawAlloc (size);
+
+    if (p != nullptr && old != nullptr)
+    {
+       #if defined (__APPLE__)
+        const size_t existing = malloc_size (old);
+       #else
+        const size_t existing = size;
+       #endif
+        std::memcpy (p, old, existing < size ? existing : size);
+    }
+
+    if (old != nullptr)
+        rawFree (old);
+
+    return p;
+}
+
 // **The global overrides live in this TU on purpose.** In a static library the linker pulls only
 // object files that resolve a referenced symbol, so an operator new override sitting in an otherwise
 // unreferenced translation unit is silently dropped and the detector counts zero — which reports as
@@ -58,7 +160,7 @@ void* operator new (size_t size)
 {
     note (size);
 
-    if (auto* p = std::malloc (size == 0 ? 1 : size))
+    if (auto* p = rawAlloc (size))     // rawAlloc, never std::malloc — see the note above
         return p;
 
     throw std::bad_alloc();
@@ -68,7 +170,7 @@ void* operator new[] (size_t size)
 {
     note (size);
 
-    if (auto* p = std::malloc (size == 0 ? 1 : size))
+    if (auto* p = rawAlloc (size))
         return p;
 
     throw std::bad_alloc();
@@ -83,10 +185,12 @@ namespace
     }
 }
 
-void operator delete (void* p) noexcept { noteFree (p); std::free (p); }
-void operator delete[] (void* p) noexcept { noteFree (p); std::free (p); }
-void operator delete (void* p, size_t) noexcept { noteFree (p); std::free (p); }
-void operator delete[] (void* p, size_t) noexcept { noteFree (p); std::free (p); }
+void operator delete (void* p) noexcept { noteFree (p); rawFree (p); }
+void operator delete[] (void* p) noexcept { noteFree (p); rawFree (p); }
+void operator delete (void* p, size_t) noexcept { noteFree (p); rawFree (p); }
+void operator delete[] (void* p, size_t) noexcept { noteFree (p); rawFree (p); }
+
+extern "C" void free (void* p) { noteFree (p); rawFree (p); }
 
 namespace nf::testing
 {
