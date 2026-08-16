@@ -49,6 +49,15 @@ namespace
         bool emitGeneratorNoise = false;
         bool seedGeneratorOnPrepare = true;
         bool seedGeneratorOnReset = false;
+
+        /*  First-run-only state, modelled on the real one. Reflect-84's pre-delay smoother is
+            constructed at zero and glides up to its target on an instance's FIRST render and never
+            again, because `SmoothedValue::reset (rate, seconds)` sets the ramp length and not the
+            value. Neither `prepareToPlay` nor `reset()` touches `glide` here, for the same reason.
+
+            It exists so the warm-up in `reproducibleAcrossReset` is shown able to fail. Without it
+            the warm-up is a line nobody can distinguish from a no-op. */
+        bool firstRunGlide = false;
         // **Default OFF**, so every other test in this file behaves as it did: the subnormal-tail
         // case needs subnormals to survive, and flush-to-zero would erase the thing it measures.
         bool guardAgainstDenormals = false;
@@ -157,6 +166,12 @@ namespace
                     if (emitGeneratorNoise)
                         v += (generator.nextFloat() * 2.0f - 1.0f) * 1.0e-3f;
 
+                    if (firstRunGlide)
+                    {
+                        glide += (1.0f - glide) * 0.0005f;   // ~2000 samples to arrive
+                        v *= glide;
+                    }
+
                     if (emitNaN)
                         v = std::numeric_limits<float>::quiet_NaN();
 
@@ -208,6 +223,7 @@ namespace
         std::vector<float> scratch, delayLine;
         int writeIndex = 0, blockCounter = 0;
         float tail = 1.0f;
+        float glide = 0.0f;   // deliberately untouched by prepareToPlay and reset — see firstRunGlide
         juce::Random generator { generatorSeed };
     };
 }
@@ -371,6 +387,47 @@ public:
             expect (unseeded.describe().contains ("PREMISE FAILED"),
                     "describe() reported a failed premise without saying so, which is how a reset "
                     "figure gets read as a reset finding");
+        }
+
+        beginTest ("The reset driver's WARM-UP is what it claims, shown by causing the thing it removes");
+        {
+            /*  **This arm exists because the driver shipped without it and Reflect-84 caught it.**
+                Unwarmed, `reproducibleAcrossReset`'s premise arm compared render 1 against render 2
+                and reported 0.392414443 at sample 351 — Reflect-84's documented first-run-only
+                pre-delay glide, which is a different finding entirely. Every other casting would
+                have accepted the same driver silently, because only that one had a known answer.
+
+                So the warm-up is proved the way everything else here is: by causing the state it
+                removes. `firstRunGlide` is the same shape — constructed at zero, arriving over the
+                first render, and touched by neither `prepareToPlay` nor `reset()`.
+            */
+            nf::testing::RenderSpec spec;
+            spec.blockSize = 256;
+            spec.numBlocks = 8;
+
+            ProbeProcessor p;
+            p.firstRunGlide = true;
+
+            const auto unwarmed = nf::testing::reproducibleAcrossReset (p, spec, 0);
+            logMessage ("  warm-up 0 -> " + unwarmed.describe());
+            expect (! unwarmed.premiseHeld(),
+                    "**THE WARM-UP CANNOT MATTER.** A processor with first-run-only state was "
+                    "reported reproducible across prepare with zero warm-up, so the warm-up below "
+                    "is removing nothing and this driver's arms are unguarded against it.");
+
+            const auto warmed = nf::testing::reproducibleAcrossReset (p, spec, 2);
+            logMessage ("  warm-up 2 -> " + warmed.describe());
+            expect (warmed.premiseHeld(),
+                    "the warm-up did not spend the first-run state: " + warmed.acrossPrepare.describe());
+
+            // **And more warm-up must not change the answer**, or the quantity is tuned rather than
+            // sufficient — the same check TapeRot's block-size figure got at 2048 and 98304 samples.
+            const auto warmer = nf::testing::reproducibleAcrossReset (p, spec, 6);
+            logMessage ("  warm-up 6 -> " + warmer.describe());
+            expect (warmer.premiseHeld() == warmed.premiseHeld()
+                        && warmer.acrossReset.sampleExact == warmed.acrossReset.sampleExact,
+                    "three times the warm-up gave a different verdict, so the quantity is tuned "
+                    "rather than sufficient: " + warmer.describe());
         }
 
         beginTest ("renderBlocks does not prepare, which is the whole reason it exists");

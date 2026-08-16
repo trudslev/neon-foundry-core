@@ -254,6 +254,11 @@ struct ResetReproducibility
         between the two arms is the whole finding. */
     InvarianceResult acrossPrepare;
 
+    /** How many renders were discarded before each arm measured. **Reported rather than assumed**,
+        because a driver that does not state its warm-up has attributed a cold-against-warm
+        difference to whatever it was varying. Raise it and show the answer does not move. */
+    int warmUpRenders = 0;
+
     /** True when the prepare arm held, so the reset arm means what it claims. */
     bool premiseHeld() const noexcept { return acrossPrepare.sampleExact; }
 
@@ -291,8 +296,14 @@ struct ResetReproducibility
     **And read `premiseHeld()` first.** A configuration that is irreproducible across prepare —
     TapeRot with FAILURE up, whose engine is seeded nowhere and whose self-comparison is 0.914 — will
     fail the reset arm for a reason this driver is not asking about.
+
+    @param warmUpRenders  discarded before each arm measures. **Not optional in spirit**: the first
+                          version of this driver warmed neither arm, and Reflect-84's premise came
+                          back 0.392414443 at sample 351 — its documented first-run-only pre-delay
+                          defect, not a reproducibility failure. Raise it and show the answer holds.
 */
-ResetReproducibility reproducibleAcrossReset (juce::AudioProcessor& processor, const RenderSpec& spec);
+ResetReproducibility reproducibleAcrossReset (juce::AudioProcessor& processor, const RenderSpec& spec,
+                                              int warmUpRenders = 1);
 
 /** Timing of a repeated call, in nanoseconds. Median and p95 rather than mean: a lock stall is a
     tail event, and a mean hides one block in fifty behind forty-nine quick ones. */

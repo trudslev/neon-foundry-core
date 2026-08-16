@@ -324,8 +324,10 @@ juce::String ResetReproducibility::describe() const
 {
     juce::String s;
 
-    // The premise leads. A reset arm read without it is the mistake this struct exists to prevent.
-    s << (premiseHeld() ? "premise HELD across prepare"
+    // The warm-up quantity leads with the premise, because a driver that does not state it has
+    // attributed a cold-against-warm difference to whatever it was varying.
+    s << "warm-up " << warmUpRenders << " render(s); "
+      << (premiseHeld() ? "premise HELD across prepare"
                         : "**PREMISE FAILED across prepare — the reset arm below means nothing**: "
                               + acrossPrepare.describe())
       << "; across reset -> " << acrossReset.describe();
@@ -333,16 +335,46 @@ juce::String ResetReproducibility::describe() const
     return s;
 }
 
-ResetReproducibility reproducibleAcrossReset (juce::AudioProcessor& processor, const RenderSpec& spec)
+ResetReproducibility reproducibleAcrossReset (juce::AudioProcessor& processor, const RenderSpec& spec,
+                                              int warmUpRenders)
 {
     ResetReproducibility result;
+    result.warmUpRenders = warmUpRenders;
 
-    // The premise arm first, through the ordinary path — prepareToPlay and reset before each render.
+    /*  **Both arms warm, and the first version of this function warmed neither.**
+
+        Reflect-84 caught it on the driver's first run against a casting, and it caught it because it
+        was the KNOWN CASE — it carries a documented first-run-only defect where its pre-delay
+        smoother glides up from zero on an instance's first render and never again. Unwarmed, the
+        premise arm compared render 1 against render 2 and reported **0.392414443, first at sample
+        351**, which is that finding rather than anything about reproducibility. Every other casting
+        would have accepted the same driver silently.
+
+        That is this suite's own rule arriving in a driver written by someone holding it: *an unwarmed
+        arm compares a cold render against a warm one and attributes the difference to whatever it
+        was varying.* Run a new metric against a case with a known answer first.
+
+        The reset arm is warmed for a second reason. Comparing a render that follows
+        `prepare`-then-`reset` against one that follows `render`-then-`reset` folds in every
+        difference between what `prepare` initialises and what `reset` does — which is a real
+        question and a DIFFERENT one, already carried as TapeRot's every-prepare `TapeModelEQ` row.
+        Warming puts both renders after a `render`-then-`reset`, which is the fixed-point property
+        this driver claims to measure and nothing else.
+    */
+    for (int i = 0; i < warmUpRenders; ++i)
+        render (processor, spec);
+
     result.acrossPrepare = compareRenders (render (processor, spec), render (processor, spec));
 
     // The reset arm. Prepare ONCE, here, and never again inside this function.
     processor.setRateAndBufferSizeDetails (spec.sampleRate, spec.blockSize);
     processor.prepareToPlay (spec.sampleRate, spec.blockSize);
+
+    for (int i = 0; i < warmUpRenders; ++i)
+    {
+        processor.reset();
+        renderBlocks (processor, spec);
+    }
 
     processor.reset();
     const auto a = renderBlocks (processor, spec);
