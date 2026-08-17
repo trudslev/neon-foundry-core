@@ -83,29 +83,31 @@ public:
                           "happens to equal it");
         }
 
-        beginTest ("The chassis inset is DERIVED from the block, and the list foot follows it");
+        beginTest ("The list runs FLUSH to the panel bottom — the inset contract is withdrawn");
         {
-            // 16 is not a fresh figure: it is what §2's own block coordinates already imply.
-            expectEquals (G::chassisInset, 16);
-            expectEquals (G::canvasWidth - G::blockW, G::chassisInset * 2,
-                          "1340 - 1308 must be twice the inset, or 16 is not the chassis inset and "
-                          "the list foot is a named number rather than a derived one");
-            expectEquals (G::blockY, G::chassisInset,
-                          "the block's top must sit on the same inset as its sides");
+            /*  **This arm previously asserted a 16 px inset and its derivation, and both are gone.**
 
-            // Reflect-84's published 537 is the consequence, and it reproduces.
+                §12 withdrew the contract change: the list runs from the display's bottom edge to the
+                panel's bottom edge, and Reflect-84's height is 553 = 648 − 95 rather than 537. The
+                16 had been found by looking for something 537 could be derived from — it appears in
+                no spec, no panel and no changelog as a list margin — so it was a reconstruction
+                rather than a base.
+
+                What is asserted now is the rule itself, and it takes no shared helper: a casting's
+                list height is its own canvas less its LCD's bottom edge. Kept as an arm rather than
+                deleted so the withdrawn figure cannot quietly return. */
             const int listTop = G::bandY + G::bandH;                 // the LCD's bottom edge
             expectEquals (listTop, 95);
-            expectEquals (G::programListFootY (648), 632);
-            expectEquals (G::programListFootY (648) - listTop, 537,
-                          "Reflect-84's stated list height must fall out of the contract rather "
-                          "than being transcribed beside it");
 
-            // The property, independent of any casting's height: the list closes on the same frame
-            // the block does. Asserted at a second height so it is not one arithmetic coincidence.
-            expectEquals (G::programListFootY (812) - listTop, 701, "a taller panel, Chorus-60's");
-            expectGreaterThan (G::programListFootY (700), G::bandY + G::bandH,
-                               "the foot must sit below the display on any supported panel height");
+            expectEquals (648 - listTop, 553, "Reflect-84's list height is the panel less the LCD's "
+                                              "bottom edge, with no margin under it");
+            expectEquals (812 - listTop, 717, "Chorus-60's, on the same rule");
+
+            // 16 is still the block's inset — that was never in doubt. What is asserted is that it
+            // is NOT the list's margin, which is the claim §12 retracted.
+            expectEquals (G::canvasWidth - G::blockW, 32, "the block is inset 16 either side");
+            expectNotEquals (648 - listTop, 648 - listTop - 16,
+                             "if these ever agree the inset contract has returned");
         }
 
         beginTest ("§4 — all six nameplate stacks now land on the anchor, with measured zeros");
