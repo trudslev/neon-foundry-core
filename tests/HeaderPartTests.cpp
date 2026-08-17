@@ -83,6 +83,31 @@ public:
                           "happens to equal it");
         }
 
+        beginTest ("The chassis inset is DERIVED from the block, and the list foot follows it");
+        {
+            // 16 is not a fresh figure: it is what §2's own block coordinates already imply.
+            expectEquals (G::chassisInset, 16);
+            expectEquals (G::canvasWidth - G::blockW, G::chassisInset * 2,
+                          "1340 - 1308 must be twice the inset, or 16 is not the chassis inset and "
+                          "the list foot is a named number rather than a derived one");
+            expectEquals (G::blockY, G::chassisInset,
+                          "the block's top must sit on the same inset as its sides");
+
+            // Reflect-84's published 537 is the consequence, and it reproduces.
+            const int listTop = G::bandY + G::bandH;                 // the LCD's bottom edge
+            expectEquals (listTop, 95);
+            expectEquals (G::programListFootY (648), 632);
+            expectEquals (G::programListFootY (648) - listTop, 537,
+                          "Reflect-84's stated list height must fall out of the contract rather "
+                          "than being transcribed beside it");
+
+            // The property, independent of any casting's height: the list closes on the same frame
+            // the block does. Asserted at a second height so it is not one arithmetic coincidence.
+            expectEquals (G::programListFootY (812) - listTop, 701, "a taller panel, Chorus-60's");
+            expectGreaterThan (G::programListFootY (700), G::bandY + G::bandH,
+                               "the foot must sit below the display on any supported panel height");
+        }
+
         beginTest ("§4 — the anchor is CHECKED, and three of six published rows do not reach it");
         {
             /*  **A measurement of the document, reported rather than fitted.** §4 tables a nameplate

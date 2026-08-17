@@ -141,6 +141,30 @@ struct HeaderGeometry
         1324, which gave the block 22 px of left padding and none on the right. */
     static constexpr int bandRightEdge = outWellX + meterWellW;         // 1302
 
+    /** **The chassis inset — 16, and it is DERIVED rather than a fresh figure.**
+
+        §2 puts the header block at x 16 on a 1340 canvas at width 1308, and `1340 - 1308 = 2 x 16`
+        with the block's own y at 16 as well. So 16 is the inset the chassis already observes on
+        every side of the block; nothing new is being introduced by naming it.
+
+        **It is what the Program list's foot lands on, and that is a CHANGE OF CONTRACT for all
+        six.** The suite rule was that the list runs from the display's bottom edge to the panel's
+        bottom, flush. Ruled 2026-08-17: it runs to the panel's bottom **less this inset**, so the
+        list closes on the same frame the block does rather than running off the chassis.
+
+        Stated here rather than per casting because the previous rule was suite-wide and its
+        replacement has to be too — a casting keeping the flush form while five inset would be
+        exactly the drift the shared contract exists to prevent. The figure a casting's own spec
+        states for its list height is then a consequence and must reproduce: Reflect-84's 537 is
+        `648 - 16 - 95`. */
+    static constexpr int chassisInset = blockX;
+
+    /** The row the Program list's foot lands on, given the casting's own panel height. */
+    static constexpr int programListFootY (int panelHeight) noexcept
+    {
+        return panelHeight - chassisInset;
+    }
+
     static juce::Rectangle<int> block()      { return { blockX, blockY, blockW, blockH }; }
     static juce::Rectangle<int> nameplate()  { return { nameplateX, nameplateY, nameplateW, nameplateH }; }
     static juce::Rectangle<int> lcd()        { return { lcdX, bandY, lcdW, bandH }; }
