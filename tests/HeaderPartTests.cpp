@@ -108,49 +108,60 @@ public:
                                "the foot must sit below the display on any supported panel height");
         }
 
-        beginTest ("§4 — the anchor is CHECKED, and three of six published rows do not reach it");
+        beginTest ("§4 — all six nameplate stacks now land on the anchor, with measured zeros");
         {
-            /*  **A measurement of the document, reported rather than fitted.** §4 tables a nameplate
-                height and a leading per casting and states all six land the descriptor on 78.
-                Computed from the zone's top, three do and three do not — and the three that miss
-                are missing an offset of the kind §4 names for Gatecrasher alone.
+            /*  **CLOSED 2026-08-17, and this arm is what closed it.** It previously pinned three
+                rows as MISSING the anchor by −5, −6 and +1, with the instruction that a revision
+                closing one should update the row. All six close now.
 
-                This arm exists to state that in a form that cannot be forgotten, and to fail if a
-                later revision changes a row without closing it. It asserts the CHECK, never a
-                derived leading: core cannot know a metaphor's top inside the zone, and guessing
-                three offsets to make a table close is fitting a control to the answer. */
-            struct Row { const char* casting; int top; int height; int leading; bool closes; };
+                What was wrong was not the offsets. Five rows genuinely are zero — they are now
+                stated as MEASURED zeros, because a measured zero and an assumed zero read
+                identically in a table. **The heights were taken from the type rather than from the
+                object**: TapeRot's 38 was its wordmark's line box where the nameplate is a Dymo
+                plate with 2 px of padding each side (→ 44), and Fifth Member's 34 was its line box
+                where the tape carries 5 above and 7 below (→ 40). Two leadings were read off a
+                render as a visual gap rather than computed, and were out by one.
+
+                That is why the three misses had no arithmetic in common — a glyph line box is not a
+                nameplate, and the two that missed hardest are the two whose metaphors carry
+                padding.
+
+                **The stack is a check, not a generator.** All six panels pin the descriptor
+                absolutely, so no leading has ever produced the anchor in any casting — which is
+                exactly how three rows sat wrong for two revisions without a panel looking wrong.
+                Nothing read them. This arm is the thing that reads them. */
+            struct Row { const char* casting; int top; int box; int leading; };
 
             const Row rows[] = {
-                { "Gatecrasher",  G::nameplateY + 8, 38, 2, true  },  // offset stated in §4
-                { "Chorus-60",    G::nameplateY,     42, 6, true  },  // 32 + 5 rule + 5
-                { "Elmer",        G::nameplateY,     39, 9, true  },  // relief plinth
-                { "Reflect-84",   G::nameplateY,     40, 9, false },  // lands 79
-                { "Fifth Member", G::nameplateY,     34, 9, false },  // lands 73
-                { "TapeRot",      G::nameplateY,     38, 4, false },  // lands 72
+                { "TapeRot",      8 - 8, 44, 4 },   // Dymo plate: 2 + 40 line box + 2
+                { "Gatecrasher",  8,     38, 2 },   // the one non-zero offset, always real
+                { "Chorus-60",    0,     42, 6 },   // 32 + 5 rule + 5
+                { "Reflect-84",   0,     40, 8 },   // engraved plate; leading was 9
+                { "Fifth Member", 0,     40, 8 },   // tape: 5 + 28 line box + 7; was 34 / 9
+                { "Elmer",        0,     39, 9 },   // relief plinth
             };
 
             for (const auto& r : rows)
             {
-                const auto lands = G::descriptorTopFor (r.top, r.height, r.leading);
-                logMessage (juce::String ("  ") + r.casting + ": " + juce::String (r.top) + " + "
-                            + juce::String (r.height) + " + " + juce::String (r.leading)
-                            + " -> " + juce::String (lands)
-                            + (lands == G::descriptorY
-                                   ? " — closes"
-                                   : " — MISSES by " + juce::String (lands - G::descriptorY)));
+                const auto lands = G::descriptorTopFor (G::nameplateY + r.top, r.box, r.leading);
+                logMessage (juce::String ("  ") + r.casting + ": 30 + " + juce::String (r.top)
+                            + " + " + juce::String (r.box) + " + " + juce::String (r.leading)
+                            + " -> " + juce::String (lands));
 
-                expect (G::landsOnDescriptorAnchor (r.top, r.height, r.leading) == r.closes,
-                        juce::String (r.casting) + " changed which side of the anchor it "
-                        "lands on. If a revision closed it, update this row and the ask; if a "
-                        "revision broke it, the panel now draws the descriptor off the shared "
-                        "line and every other casting still hits it");
+                expect (G::landsOnDescriptorAnchor (G::nameplateY + r.top, r.box, r.leading),
+                        juce::String (r.casting) + " no longer lands on the shared anchor. Every row "
+                        "closed as of §4's 2026-08-17 revision, so this is a regression rather than "
+                        "a known gap — the descriptor would sit off the line every other casting hits");
             }
 
-            // The property itself, independent of any published row: the anchor is what the casting
-            // must reach, and it is reachable by construction from any height the zone can hold.
-            expect (G::landsOnDescriptorAnchor (G::nameplateY, 40, G::descriptorY - G::nameplateY - 40),
-                    "a leading solved from the anchor must reach it for any nameplate height");
+            // **The layout box is not the artwork box, and mixing them is why the table could not
+            // close whatever the figures were.** TapeRot's plate and Fifth Member's tape are
+            // rotated, so their artwork is taller than the box the stack uses — 50 against 44, 45.6
+            // against 40. Asserted so a later reader taking heights off the artwork column
+            // reintroduces the original defect and is told.
+            expect (! G::landsOnDescriptorAnchor (G::nameplateY, 50, 4),
+                    "TapeRot's ARTWORK box (50, rotated) must not close the stack — the layout box "
+                    "is 44, and taking heights from the artwork column is the defect §4 just fixed");
         }
 
         beginTest ("§5 — the LCD budget is COMPUTED and must equal the document's measured answer");
