@@ -31,6 +31,13 @@ struct CpuCell
 {
     int blockSize = 0;
     double sampleRate = 0.0;
+    /** **A full-panel repaint at 20 Hz with timers fired, NOT "what the editor costs in a host".**
+        Headless there is no peer, so the dirty-region path a host uses is unreachable; what this
+        measures is every pixel on every timer tick. Stated as the worst case it is, because a
+        figure named for something it does not measure is how a precise number becomes a wrong one —
+        and it is still the right shape for the bar, which is *catch a casting that is 10x its
+        siblings*: a worst case applied identically to six panels compares them correctly even
+        though none of them pays it. */
     bool editorOpen = false;
 
     /** **Fraction of ONE core, not of wall clock.** CPU time consumed divided by the audio duration

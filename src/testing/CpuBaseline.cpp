@@ -135,10 +135,22 @@ CpuCell measureCpu (juce::AudioProcessor& processor, int blockSize, double sampl
             they would in a host rather than as fast as the loop spins. */
         if (editor != nullptr)
         {
-            /*  One GUI frame per ~16.7 ms of AUDIO, which is 60 fps against the audio clock rather
-                than against how fast this loop happens to spin. Timers are fired synchronously —
-                the castings' scopes and meters run on 20-60 Hz timers, and an editor whose timers
-                never fire is an editor that costs nothing and would report a free GUI. */
+            /*  **A FULL-PANEL REPAINT AT 20 Hz, and the figure must be read as that rather than as
+                "what the editor costs in a host".** The first version painted at 60 fps and
+                Chorus-60 came back at **117 % of one core** — a real measurement of something no
+                casting does. A host repaints DIRTY REGIONS; these panels run 20 Hz timers that
+                dirty a scope or a meter, not 1340 x 812 of fascia, knobs and printed ink.
+
+                Headless there is no peer, so `repaint()` marks a region and nothing flushes it —
+                the dirty-region path is not reachable here at all. So what is measured is the
+                honest worst case: every pixel, every timer tick. It is stated in those terms in the
+                baseline file, and it is still the right shape for the bar the sweep actually wants,
+                which is *catch a casting that is 10x its siblings* — a worst case applied
+                identically to six panels compares them correctly even though none of them pays it.
+
+                20 Hz because that is the rate the castings' timers run at. Firing them is not
+                optional: an editor whose timers never fire costs nothing and would report a free
+                GUI, which is the silent-input failure in a different unit. */
             const double audioElapsed = (double) (i + 1) * (double) blockSize / sampleRate;
 
             if (audioElapsed >= nextFrameAt)
@@ -148,7 +160,7 @@ CpuCell measureCpu (juce::AudioProcessor& processor, int blockSize, double sampl
                 juce::Graphics g (frame);
                 holder.paintEntireComponent (g, false);
 
-                nextFrameAt += 1.0 / 60.0;
+                nextFrameAt += 1.0 / 20.0;
             }
 
             juce::ignoreUnused (wallStart);
