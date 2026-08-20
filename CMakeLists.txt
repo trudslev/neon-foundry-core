@@ -160,7 +160,8 @@ target_link_libraries(neon_foundry_core PUBLIC
 # override into every shipping binary in the suite, which is exactly the sort of thing that is
 # invisible until it is catastrophic.
 add_library(neon_foundry_core_testing STATIC
-    src/testing/ProcessorHarness.cpp)
+    src/testing/ProcessorHarness.cpp
+    src/testing/CpuBaseline.cpp)
 
 add_library(nf::testing ALIAS neon_foundry_core_testing)
 

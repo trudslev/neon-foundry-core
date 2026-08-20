@@ -13,7 +13,8 @@ target_sources(NeonFoundryCoreTests PRIVATE
     UserEditGateTests.cpp
     ProcessorHarnessTests.cpp
     BlockChunkingTests.cpp
-    HeaderPartTests.cpp)
+    HeaderPartTests.cpp
+    CpuBaselineTests.cpp)
 
 target_compile_definitions(NeonFoundryCoreTests PRIVATE
     JUCE_WEB_BROWSER=0
