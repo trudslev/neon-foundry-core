@@ -114,6 +114,10 @@ struct CpuComparison
     double baselineFraction = 0.0;
     double ratio = 0.0;        ///< measured / baseline
     bool withinTolerance = true;
+    /** True when the cell is below the noise floor and the ratio bar was NOT applied to it. Reported
+        rather than silent, because a cell that is not being checked must not look like one that
+        passed — which is the same rule that makes a missing baseline a refusal. */
+    bool belowNoiseFloor = false;
 
     juce::String describe() const;
 };
@@ -126,8 +130,34 @@ struct CpuComparison
                       stays meaningful, and it is the shape that catches "this got slower and nobody
                       noticed".
 */
+/** @param noiseFloor  the absolute core fraction below which the RATIO BAR DOES NOT APPLY.
+
+    **A ratio discards magnitude, so a bar stated as one needs a magnitude to be meaningful.** At
+    0.2 % of a core a 10 % regression is 0.02 % — neither detectable nor worth detecting, and the
+    bar exists to catch a casting becoming an order heavier rather than to shave points. Making the
+    measurement more precise does not help: measured perfectly, 0.02 % would still mean nothing.
+
+    **0.01 is DERIVED, not chosen round.** Four to five repeated runs of all six castings, 70 cells:
+
+    | Magnitude | Cells | Worst spread | Median spread |
+    |---|---|---|---|
+    | below 1 % of a core | 32 | **71.0 %** | 3.0 % |
+    | 1 % to 10 % | 11 | 7.9 % | 1.7 % |
+    | above 10 % | 27 | 5.7 % | 1.9 % |
+
+    The discriminator is not gradual: below 1 % there are cells spreading 37 %, 54 % and 71 % run to
+    run, and at 1 % and above nothing exceeds 8 %. The worst offenders are every casting's
+    `64@48000/closed` — the shortest per-block work, where the clock's own quantisation is the same
+    size as the quantity.
+
+    **And the 10 % bar's margin over that is thin and is stated rather than implied**: 7.9 % observed
+    against a 10 % bar leaves about two points. A cell failing at 11–12 % should be re-run before it
+    is believed; one failing at 30 % is a regression. That is a property of this instrument on this
+    machine, which is why the figure lives beside the measurement that produced it and not in prose.
+*/
 std::vector<CpuComparison> compareToBaseline (const std::vector<CpuCell>& measured,
-                                              const CpuBaseline&, double tolerance = 1.10);
+                                              const CpuBaseline&, double tolerance = 1.10,
+                                              double noiseFloor = 0.01);
 
 /** The matrix this suite measures, so six castings cannot each pick their own and then be compared.
 

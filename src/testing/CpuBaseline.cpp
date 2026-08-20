@@ -177,13 +177,20 @@ CpuCell measureCpu (juce::AudioProcessor& processor, int blockSize, double sampl
 
 juce::String CpuComparison::describe() const
 {
+    if (belowNoiseFloor)
+        return measured.describe() + "  baseline " + juce::String (baselineFraction * 100.0, 2)
+             + " %  — below the noise floor, ratio bar NOT applied (this cell is reported, not "
+               "checked: at this magnitude a 10 % change is smaller than the instrument's own "
+               "run-to-run spread, which reaches 71 %)";
+
     return measured.describe() + "  baseline " + juce::String (baselineFraction * 100.0, 2)
          + " %  ratio " + juce::String (ratio, 3)
          + (withinTolerance ? "" : "  ** OVER **");
 }
 
 std::vector<CpuComparison> compareToBaseline (const std::vector<CpuCell>& measured,
-                                              const CpuBaseline& baseline, double tolerance)
+                                              const CpuBaseline& baseline, double tolerance,
+                                              double noiseFloor)
 {
     std::vector<CpuComparison> out;
 
@@ -199,7 +206,14 @@ std::vector<CpuComparison> compareToBaseline (const std::vector<CpuCell>& measur
                 which reads as a tool defect rather than as the empty input it is. `read` refuses a
                 malformed file for the same reason. */
             c.ratio = recorded->coreFraction > 0.0 ? m.coreFraction / recorded->coreFraction : 0.0;
-            c.withinTolerance = recorded->coreFraction > 0.0 && c.ratio <= tolerance;
+
+            /*  **Below the floor the ratio bar does not apply, and the cell says so.** Both the
+                measured and the recorded figure have to clear it: a cell that was cheap when
+                baselined and is expensive now is exactly the regression worth catching, and
+                exempting it on the OLD figure alone would hide it. */
+            c.belowNoiseFloor = m.coreFraction < noiseFloor && recorded->coreFraction < noiseFloor;
+            c.withinTolerance = c.belowNoiseFloor
+                              || (recorded->coreFraction > 0.0 && c.ratio <= tolerance);
         }
         else
         {
