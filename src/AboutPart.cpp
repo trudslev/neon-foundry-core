@@ -51,6 +51,16 @@ void drawTracked (juce::Graphics& g, const juce::String& text, const juce::Font&
     }
 }
 
+/** Word-wrapped tracked text.
+
+    `drawFittedText` is the obvious call and it is the wrong one here: it applies no tracking, and
+    §4 states .04 em on both wrapping rows. Dropping a stated figure because the convenient API has
+    no parameter for it is how a spec quietly becomes an approximation — so the wrap is done here
+    and each line goes through the same `drawTracked` every other row uses. */
+void drawWrappedTracked (juce::Graphics& g, const juce::String& text, const juce::Font& font,
+                         float tracking, juce::Rectangle<float> area, float lineBox,
+                         juce::Colour colour);
+
 /** A spec quotes an em size; `juce::Font::withHeight` sets ascent+descent, a face-specific multiple
     of it. `withPointHeight` is the one that means what a spec means. */
 juce::Font faceAt (juce::Typeface::Ptr t, float cssPx)
@@ -59,6 +69,35 @@ juce::Font faceAt (juce::Typeface::Ptr t, float cssPx)
 }
 
 juce::Colour brighter (juce::Colour c) { return c.brighter (0.25f); }
+
+void drawWrappedTracked (juce::Graphics& g, const juce::String& text, const juce::Font& font,
+                         float tracking, juce::Rectangle<float> area, float lineBox,
+                         juce::Colour colour)
+{
+    juce::StringArray words;
+    words.addTokens (text, " ", "");
+
+    juce::String line;
+    float y = area.getY();
+
+    const auto flush = [&]
+    {
+        if (line.isNotEmpty())
+            drawTracked (g, line, font, tracking, { area.getX(), y, area.getWidth(), lineBox },
+                         juce::Justification::centredLeft, colour);
+        y += lineBox;
+        line.clear();
+    };
+
+    for (const auto& w : words)
+    {
+        const juce::String candidate = line.isEmpty() ? w : line + " " + w;
+        if (trackedWidth (candidate, font, tracking) > area.getWidth() && line.isNotEmpty())
+            flush();
+        line = line.isEmpty() ? w : line + " " + w;
+    }
+    flush();
+}
 
 } // namespace
 
@@ -283,21 +322,19 @@ void AboutBox::paint (juce::Graphics& g)
     {
         // §8: an acknowledgement, not a legal document - it names faces and licence families and
         // points at the file. It must not paraphrase a licence.
-        g.setFont (faceAt (mats.proseFace, G::creditsCssPx));
-        g.setColour (mats.body);
-        g.drawFittedText (text.typefaceCredits,
-                          juce::Rectangle<int> ((int) bx + G::valueX, (int) by + G::rowTypefaces,
-                                                G::valueW, (int) (G::creditsLineBox * 2.0f)),
-                          juce::Justification::topLeft, 2);
+        drawWrappedTracked (g, text.typefaceCredits, faceAt (mats.proseFace, G::creditsCssPx),
+                            G::creditsTracking * G::creditsCssPx,
+                            { bx + G::valueX, by + G::rowTypefaces, (float) G::valueW, G::creditsLineBox },
+                            G::creditsLineBox, mats.body);
     }
 
     {
-        g.setFont (faceAt (mats.proseFace, G::noteCssPx));
-        g.setColour (mats.dim);
-        g.drawFittedText ("Full licence text ships as THIRD-PARTY-LICENCES.txt in this bundle's Resources.",
-                          juce::Rectangle<int> ((int) bx + G::labelX, (int) by + G::rowResources,
-                                                G::ruleX1 - G::ruleX0, (int) (G::noteLineBox * 2.0f)),
-                          juce::Justification::topLeft, 2);
+        drawWrappedTracked (g, "Full licence text ships as THIRD-PARTY-LICENCES.txt in this "
+                               "bundle's Resources.",
+                            faceAt (mats.proseFace, G::noteCssPx), G::noteTracking * G::noteCssPx,
+                            { bx + G::labelX, by + G::rowResources,
+                              (float) (G::ruleX1 - G::ruleX0), G::noteLineBox },
+                            G::noteLineBox, mats.dim);
     }
 
     /*  §6: CLOSE is a LEGEND ON A SHOE, not a new part - PARTS-CATALOGUE §4B's two-position shoe at
