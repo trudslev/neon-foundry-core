@@ -162,7 +162,8 @@ target_link_libraries(neon_foundry_core PUBLIC
 # invisible until it is catastrophic.
 add_library(neon_foundry_core_testing STATIC
     src/testing/ProcessorHarness.cpp
-    src/testing/CpuBaseline.cpp)
+    src/testing/CpuBaseline.cpp
+    src/testing/ComponentRender.cpp)
 
 add_library(nf::testing ALIAS neon_foundry_core_testing)
 
