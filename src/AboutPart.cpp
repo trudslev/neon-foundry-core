@@ -63,6 +63,49 @@ juce::Colour brighter (juce::Colour c) { return c.brighter (0.25f); }
 } // namespace
 
 
+AboutTab::AboutTab (AboutMaterials materials, juce::String stampText, float monoCssPx, float trackingEmValue)
+    : mats (std::move (materials)), stamp (std::move (stampText)),
+      cssPx (monoCssPx), trackingEm (trackingEmValue)
+{
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);
+}
+
+void AboutTab::layoutFor (int canvasH)
+{
+    const auto font = faceAt (mats.monoFace, cssPx);
+    const int run = juce::roundToInt (trackedWidth (stamp, font, trackingEm * cssPx));
+    setBounds (AboutGeometry::tabFor (canvasH, run));
+}
+
+void AboutTab::paint (juce::Graphics& g)
+{
+    const auto r = getLocalBounds().toFloat();
+
+    // §2: an inset ring, not a border - HEADER-PART §3 applies unchanged. The recess IS the resting
+    // affordance: a shallow etched plate reads pressable on hardware at rest, which a hover-only
+    // underline does not.
+    g.setGradientFill ({ hot ? mats.wellTop.brighter (0.18f) : mats.wellTop, 0.0f, r.getY(),
+                         hot ? mats.wellBottom.brighter (0.18f) : mats.wellBottom, 0.0f, r.getBottom(),
+                         false });
+    g.fillRoundedRectangle (r, AboutGeometry::boxRadius);
+    g.setColour (mats.ring);
+    g.drawRoundedRectangle (r.reduced (0.5f), AboutGeometry::boxRadius, 1.0f);
+
+    // §2: hover takes the ink to the casting's accent and lightens the well one step.
+    drawTracked (g, stamp, faceAt (mats.monoFace, cssPx), trackingEm * cssPx, r,
+                 juce::Justification::centred, hot ? mats.accent : mats.wellInk);
+}
+
+void AboutTab::mouseUp (const juce::MouseEvent& e)
+{
+    if (getLocalBounds().contains (e.getPosition()) && onClick != nullptr)
+        onClick();
+}
+
+void AboutTab::mouseEnter (const juce::MouseEvent&) { hot = true;  repaint(); }
+void AboutTab::mouseExit  (const juce::MouseEvent&) { hot = false; repaint(); }
+
+
 AboutBox::AboutBox (AboutMaterials materials, AboutContent content)
     : mats (std::move (materials)), text (std::move (content))
 {

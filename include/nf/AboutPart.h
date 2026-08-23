@@ -198,6 +198,44 @@ struct AboutContent
     §6 also: opening and closing **touch no parameter and persist nothing.** The box is not a state
     of the plugin — it does not enter the parameter tree, does not serialise, and is closed on every
     load. */
+/** §2's affordance: **the version stamp, promoted to a recessed tab.** No new element is added to
+    any panel, and the tab is here rather than six times because §1 makes the affordance and its
+    position shared — only the well's material and the stamp's own string differ.
+
+    Why not the wordmark: it is artwork on two castings, so an affordance there is a hit region over
+    a bitmap on two panels and over live text on four — six answers to one question. Why not a
+    screw: a screw reads inert, and making an inert-looking element load-bearing is worse than
+    decorating one. The stamp is the only string on any panel whose entire job is identifying this
+    build, so clicking it is not a control action.
+
+    **The ink is measured against the WELL, not the fascia** (§9.2). Against the fascia the 7:1 floor
+    is unreachable on two castings — gatecrasher tops out at 6.45 and fifth-member at 3.16 — because
+    a ceiling is set by the ground, not the ink. Against the well it runs 7.15 to 11.46. */
+class AboutTab final : public juce::Component
+{
+public:
+    AboutTab (AboutMaterials materials, juce::String stampText, float monoCssPx, float trackingEm);
+
+    std::function<void()> onClick;
+
+    /** Places itself from §2's law against the canvas it sits on. */
+    void layoutFor (int canvasH);
+
+    void paint (juce::Graphics&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseEnter (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
+
+private:
+    AboutMaterials mats;
+    juce::String stamp;
+    float cssPx, trackingEm;
+    bool hot = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AboutTab)
+};
+
+
 class AboutBox final : public juce::Component
 {
 public:
