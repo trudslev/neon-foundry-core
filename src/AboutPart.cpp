@@ -111,7 +111,12 @@ AboutBox::AboutBox (AboutMaterials materials, AboutContent content)
 {
     setVisible (false);
     setWantsKeyboardFocus (true);
-    setAlwaysOnTop (true);
+
+    /*  **No `setAlwaysOnTop`.** It is a top-level-window call: on a child it reaches for the peer
+        and JUCE gives the component one, which resized the standalone's window the moment the box
+        opened — a 1340 canvas settling at 1284, caught by `capture_panel.py` refusing to measure a
+        resampled GUI rather than by anything looking wrong. Z-order is the editor's job and it has
+        it: the box is the last child added, so it is already above everything. */
 
     // §4: the row must not wrap, so a slug over budget is a build failure rather than a layout
     // that quietly degrades. A wrapped URL invites a reader to copy half of it.
