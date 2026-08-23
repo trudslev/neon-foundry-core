@@ -120,7 +120,8 @@ if(NOT PROJECT_IS_TOP_LEVEL)
 endif()
 
 add_library(neon_foundry_core STATIC
-    src/UserProgramDirectory.cpp)
+    src/UserProgramDirectory.cpp
+    src/AboutPart.cpp)
 
 add_library(nf::core ALIAS neon_foundry_core)
 
