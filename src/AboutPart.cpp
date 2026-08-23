@@ -102,16 +102,37 @@ void drawWrappedTracked (juce::Graphics& g, const juce::String& text, const juce
 } // namespace
 
 
-AboutTab::AboutTab (AboutMaterials materials, juce::String stampText, float monoCssPx, float trackingEmValue)
-    : mats (std::move (materials)), stamp (std::move (stampText)),
-      cssPx (monoCssPx), trackingEm (trackingEmValue)
+AboutTab::AboutTab (AboutMaterials materials, juce::Typeface::Ptr stampFace,
+                    juce::String stampText, float stampCssPx, float trackingEmValue)
+    : mats (std::move (materials)), face (std::move (stampFace)), stamp (std::move (stampText)),
+      cssPx (stampCssPx), trackingEm (trackingEmValue)
 {
-    setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    // §2b. An empty MouseCursor would silently be the arrow, so the fallback is explicit.
+    setMouseCursor (mats.helpCursor == juce::MouseCursor() ? juce::MouseCursor (juce::MouseCursor::PointingHandCursor)
+                                                           : mats.helpCursor);
+}
+
+
+AboutWordmarkHit::AboutWordmarkHit (juce::MouseCursor helpCursor)
+{
+    setMouseCursor (helpCursor == juce::MouseCursor() ? juce::MouseCursor (juce::MouseCursor::PointingHandCursor)
+                                                      : helpCursor);
+}
+
+juce::Rectangle<int> AboutWordmarkHit::zone()
+{
+    return HeaderGeometry::nameplate();
+}
+
+void AboutWordmarkHit::mouseUp (const juce::MouseEvent& e)
+{
+    if (getLocalBounds().contains (e.getPosition()) && onClick != nullptr)
+        onClick();
 }
 
 void AboutTab::layoutFor (int canvasH)
 {
-    const auto font = faceAt (mats.monoFace, cssPx);
+    const auto font = faceAt (face, cssPx);
     const int run = juce::roundToInt (trackedWidth (stamp, font, trackingEm * cssPx));
     setBounds (AboutGeometry::tabFor (canvasH, run));
 }
@@ -131,7 +152,7 @@ void AboutTab::paint (juce::Graphics& g)
     g.drawRoundedRectangle (r.reduced (0.5f), AboutGeometry::boxRadius, 1.0f);
 
     // §2: hover takes the ink to the casting's accent and lightens the well one step.
-    drawTracked (g, stamp, faceAt (mats.monoFace, cssPx), trackingEm * cssPx, r,
+    drawTracked (g, stamp, faceAt (face, cssPx), trackingEm * cssPx, r,
                  juce::Justification::centred, hot ? mats.accent : mats.wellInk);
 }
 

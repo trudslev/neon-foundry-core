@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "nf/HeaderPart.h"   // §2a: the wordmark hit box IS HeaderGeometry::nameplate()
+
 /*  ============================================================================================
     THE ABOUT PART — shared geometry, shared behaviour, six materials.
 
@@ -152,6 +154,14 @@ struct AboutMaterials
     juce::Typeface::Ptr labelFace;   ///< Barlow Condensed 600
     juce::Typeface::Ptr proseFace;   ///< Barlow Condensed 500
     juce::Typeface::Ptr monoFace;    ///< the casting's own mono
+
+    /** §2b: **`help`, not `pointer`, on both affordances.** `pointer` says *this acts*; `help` says
+        *this explains something*, which is what an About box is — the one signal that costs no ink,
+        changes nothing at rest, and fires on an ordinary sweep. JUCE has no help cursor in
+        `StandardCursorType`, so the casting builds one from the delivered
+        `shared/assets/about-cursor-*.png` and hands it over. If it is ever empty the fallback is
+        `PointingHandCursor`, which loses the distinction rather than the affordance. */
+    juce::MouseCursor helpCursor;
 };
 
 
@@ -214,7 +224,14 @@ struct AboutContent
 class AboutTab final : public juce::Component
 {
 public:
-    AboutTab (AboutMaterials materials, juce::String stampText, float monoCssPx, float trackingEm);
+    /** §2, revision 3: the tab takes **the face and size the casting's stamp already uses**, not
+        a mono 10 / 13 the part imposes. Revision 2 stated mono and was wrong for two castings —
+        Fifth Member's stamp is Barlow Condensed 600 at 11 / 13 / .26 em by its own §8 foot-strip
+        row and Reflect-84's is Barlow Condensed 600 at 10 / 13 / .1 em, so forcing mono would have
+        re-typed a string the casting had already specified. The part adds the recess, the ink, the
+        cursor and the handlers; it does not restate the type. */
+    AboutTab (AboutMaterials materials, juce::Typeface::Ptr stampFace,
+              juce::String stampText, float cssPx, float trackingEm);
 
     std::function<void()> onClick;
 
@@ -228,11 +245,46 @@ public:
 
 private:
     AboutMaterials mats;
+    juce::Typeface::Ptr face;
     juce::String stamp;
     float cssPx, trackingEm;
     bool hot = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AboutTab)
+};
+
+
+/** §2a's PRIMARY affordance: **the wordmark opens the box too.**
+
+    Revision 2 ruled the wordmark out and revision 3 reverses it, striking the argument that a
+    recessed plate reads pressable — on hardware **raised** reads pressable and **recessed reads
+    engraved**, so the original reasoning had picked the least discoverable spot on the panel and
+    justified it with a hardware idiom running backwards. Two further problems with the stamp
+    alone: a 10 px dim string in the bottom-right corner is where nothing is, so a hover-only
+    reveal never fires; and hardware has no About box to borrow a convention from, so any
+    affordance here is a software convention in hardware clothes.
+
+    **The objection that ruled the wordmark out was a BUILD objection answering a DISCOVERABILITY
+    question.** *"A hit region over a bitmap"* is about drawing, and a hit region needs only a
+    rectangle — `HeaderGeometry::nameplate()`, **303 x 84**, shared and identical in all six. A hit
+    region over a bitmap and one over live text are the same rectangle, which is exactly why the
+    zone is used rather than the letterforms.
+
+    It draws nothing. The wordmark is already on the panel; this only claims its box. */
+class AboutWordmarkHit final : public juce::Component
+{
+public:
+    explicit AboutWordmarkHit (juce::MouseCursor helpCursor);
+
+    std::function<void()> onClick;
+
+    void paint (juce::Graphics&) override {}          // the wordmark is drawn by the panel
+    void mouseUp (const juce::MouseEvent&) override;
+
+    /** The nameplate zone, in canvas coordinates. */
+    static juce::Rectangle<int> zone();
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AboutWordmarkHit)
 };
 
 
