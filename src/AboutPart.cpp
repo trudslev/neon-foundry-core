@@ -107,9 +107,9 @@ AboutTab::AboutTab (AboutMaterials materials, juce::Typeface::Ptr stampFace,
     : mats (std::move (materials)), face (std::move (stampFace)), stamp (std::move (stampText)),
       cssPx (stampCssPx), trackingEm (trackingEmValue)
 {
-    // §2b. An empty MouseCursor would silently be the arrow, so the fallback is explicit.
-    setMouseCursor (mats.helpCursor == juce::MouseCursor() ? juce::MouseCursor (juce::MouseCursor::PointingHandCursor)
-                                                           : mats.helpCursor);
+    // §2b revision 4. A SYSTEM cursor, so it honours the accessibility pointer-size setting that
+    // an app-supplied bitmap silently ignores. Set here rather than passed, so no casting can differ.
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);
 
     /*  **Buffered, because promoting the stamp moved it from a baked layer into a live child.**
 
@@ -129,10 +129,9 @@ AboutTab::AboutTab (AboutMaterials materials, juce::Typeface::Ptr stampFace,
 }
 
 
-AboutWordmarkHit::AboutWordmarkHit (juce::MouseCursor helpCursor)
+AboutWordmarkHit::AboutWordmarkHit()
 {
-    setMouseCursor (helpCursor == juce::MouseCursor() ? juce::MouseCursor (juce::MouseCursor::PointingHandCursor)
-                                                      : helpCursor);
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);   // §2b revision 4
 }
 
 juce::Rectangle<int> AboutWordmarkHit::zone (int frameX)
