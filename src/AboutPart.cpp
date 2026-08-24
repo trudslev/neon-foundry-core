@@ -102,32 +102,6 @@ void drawWrappedTracked (juce::Graphics& g, const juce::String& text, const juce
 } // namespace
 
 
-#if ! JUCE_MAC
-/*  Windows and Linux, and neither is a stub.
-
-    **Windows needs no detection**: JUCE's own cursor path already rescales a custom image to
-    `GetSystemMetricsForDpi (SM_CXCURSOR)`, scales the hotspot with it and caches per size, so the
-    custom cursor tracks the pointer-size setting without help.
-
-    **Linux has nothing to read.** `createCustomMouseCursorInfo` uses the image at its own size with
-    the hotspot unscaled — the same gap macOS has — but X11 cursor sizing is per-theme
-    (`Xcursor.size`, `XCURSOR_SIZE`) rather than one system setting, so there is no equivalent value
-    to test. Returning false keeps the custom cursor, which is the status quo there. */
-bool systemPointerIsEnlarged() { return false; }
-#endif
-
-juce::MouseCursor aboutCursor (const juce::MouseCursor& custom)
-{
-    /*  An empty cursor would silently be the arrow, so the fallback stays explicit — and an
-        enlarged pointer takes the same branch, for the reason §2b revision 4 gave and this build
-        then narrowed to one platform. */
-    if (custom == juce::MouseCursor() || systemPointerIsEnlarged())
-        return juce::MouseCursor (juce::MouseCursor::PointingHandCursor);
-
-    return custom;
-}
-
-
 AboutTab::AboutTab (AboutMaterials materials, juce::Typeface::Ptr stampFace,
                     juce::String stampText, float stampCssPx, float trackingEmValue)
     : mats (std::move (materials)), face (std::move (stampFace)), stamp (std::move (stampText)),
@@ -156,15 +130,9 @@ AboutTab::AboutTab (AboutMaterials materials, juce::Typeface::Ptr stampFace,
 
 
 AboutWordmarkHit::AboutWordmarkHit (juce::MouseCursor helpCursor)
-    : custom (std::move (helpCursor))
 {
-    setMouseCursor (aboutCursor (custom));
-}
-
-void AboutWordmarkHit::mouseEnter (const juce::MouseEvent&)
-{
-    // Same reading as the tab's, and for the same reason: current by construction.
-    setMouseCursor (aboutCursor (custom));
+    setMouseCursor (helpCursor == juce::MouseCursor() ? juce::MouseCursor (juce::MouseCursor::PointingHandCursor)
+                                                      : helpCursor);
 }
 
 juce::Rectangle<int> AboutWordmarkHit::zone (int frameX)
@@ -214,14 +182,7 @@ void AboutTab::mouseUp (const juce::MouseEvent& e)
         onClick();
 }
 
-void AboutTab::mouseEnter (const juce::MouseEvent&)
-{
-    // §2b: decided HERE rather than in the constructor. macOS posts no notification when the
-    // pointer size changes, so a value read once goes stale; a crossing is always current.
-    setMouseCursor (aboutCursor (mats.helpCursor));
-    hot = true;
-    repaint();
-}
+void AboutTab::mouseEnter (const juce::MouseEvent&) { hot = true;  repaint(); }
 void AboutTab::mouseExit  (const juce::MouseEvent&) { hot = false; repaint(); }
 
 

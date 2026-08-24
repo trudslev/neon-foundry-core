@@ -84,59 +84,6 @@ public:
                 "§4's 45-character budget, measured on the suite's longest slug");
         expect (! nf::AboutBox::repositoryFits (juce::String::repeatedString ("x", 46)),
                 "the budget must be able to fail");
-
-        beginTest ("§2b's pointer-size hybrid picks the right cursor on each branch");
-
-        /*  **What this can and cannot assert.** `systemPointerIsEnlarged()` reads the machine, so
-            its VALUE is not assertable — a green run here says nothing about which branch ran.
-            What is assertable is that `aboutCursor` routes correctly given each answer, and that
-            the threshold sits where the reasoning says. Stated rather than left implied, because a
-            test that only observes today's machine reads exactly like one that checks something. */
-
-        const juce::MouseCursor custom (juce::Image (juce::Image::ARGB, 64, 64, true), 7, 4, 2.0f);
-        const juce::MouseCursor pointing (juce::MouseCursor::PointingHandCursor);
-
-        // An empty cursor is never handed on: it would silently be the arrow.
-        expect (nf::aboutCursor (juce::MouseCursor()) == pointing,
-                "an empty custom cursor must fall back explicitly");
-
-        // And a real one survives whenever the pointer is not enlarged. On a default-configured
-        // machine that is the branch this exercises; on an enlarged one it exercises the other.
-        const bool enlarged = nf::systemPointerIsEnlarged();
-        logMessage (juce::String ("  system pointer reads ")
-                    + (enlarged ? "ENLARGED — aboutCursor should downgrade"
-                                : "default — aboutCursor should keep the custom cursor"));
-        expect (nf::aboutCursor (custom) == (enlarged ? pointing : custom),
-                "aboutCursor did not route to the branch systemPointerIsEnlarged reports");
-
-        /*  **The threshold, bracketed by the two real readings rather than by an analogy.** Both
-            measured on this machine: 23 x 22 at the default pointer size, 28 x 40 with the
-            Accessibility setting turned up. The check is on `max(w, h)`, so the two figures that
-            matter are 23 and 40. */
-        constexpr double measuredDefault  = 23.0;   // max(23, 22)
-        constexpr double measuredEnlarged = 40.0;   // max(28, 40)
-
-        expect (nf::enlargedPointerThresholdPoints > measuredDefault,
-                "the threshold must not trip at the measured default size");
-        expect (nf::enlargedPointerThresholdPoints < measuredEnlarged,
-                "the threshold must trip at the measured enlarged size");
-        expect (nf::enlargedPointerThresholdPoints > measuredDefault * 1.25,
-                "and must clear the default by a margin, since Apple publishes no default size and "
-                "it may vary by macOS version or cursor theme");
-
-        /*  **Width alone would have missed the enlargement**, which is why the implementation takes
-            the larger dimension. Asserted so a later 'simplification' to width has to argue with a
-            measurement: the enlarged arrow is 28 wide, under the threshold, and 40 tall. */
-        expect (28.0 < nf::enlargedPointerThresholdPoints,
-                "the enlarged arrow's WIDTH is under the threshold — testing width alone is wrong");
-        expect (40.0 > nf::enlargedPointerThresholdPoints,
-                "its HEIGHT is over it, which is what makes max(w, h) the right test");
-
-       #if ! JUCE_MAC
-        expect (! nf::systemPointerIsEnlarged(),
-                "off macOS this is false by design: Windows needs no detection because JUCE already "
-                "rescales, and X11 has no equivalent value to read");
-       #endif
     }
 };
 
