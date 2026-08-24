@@ -136,6 +136,12 @@ struct AboutGeometry
     static constexpr int tabBottomInset = 20;                    // bottom edge = canvasH - 20
     static constexpr int tabH = 24;                              // 13 line box + 5.5 either side
     static constexpr int tabPadX = 10;                           // width is shrink-to-fit
+
+    /** **2, not the box's 3**, and derived from the artefact rather than from the prose. §2 gives
+        the tab no radius at all, so it was drawn at `boxRadius` — and all six delivered prototypes
+        declare `border-radius: 2px` on their tab against `3px` on their box. One pixel, in the
+        same direction, in six independent files, which is a decision rather than a rounding. */
+    static constexpr float tabRadius = 2.0f;
     static constexpr float tabCssPx = 10.0f, tabLineBox = 13.0f;
     static_assert (tabH % 2 == 0, "even, so 0.5x lands on whole pixels");
 

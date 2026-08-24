@@ -151,9 +151,9 @@ void AboutTab::paint (juce::Graphics& g)
     g.setGradientFill ({ hot ? mats.wellTop.brighter (0.18f) : mats.wellTop, 0.0f, r.getY(),
                          hot ? mats.wellBottom.brighter (0.18f) : mats.wellBottom, 0.0f, r.getBottom(),
                          false });
-    g.fillRoundedRectangle (r, AboutGeometry::boxRadius);
+    g.fillRoundedRectangle (r, AboutGeometry::tabRadius);
     g.setColour (mats.ring);
-    g.drawRoundedRectangle (r.reduced (0.5f), AboutGeometry::boxRadius, 1.0f);
+    g.drawRoundedRectangle (r.reduced (0.5f), AboutGeometry::tabRadius, 1.0f);
 
     // §2: hover takes the ink to the casting's accent and lightens the well one step.
     drawTracked (g, stamp, faceAt (face, cssPx), trackingEm * cssPx, r,
