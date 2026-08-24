@@ -110,6 +110,22 @@ AboutTab::AboutTab (AboutMaterials materials, juce::Typeface::Ptr stampFace,
     // §2b. An empty MouseCursor would silently be the arrow, so the fallback is explicit.
     setMouseCursor (mats.helpCursor == juce::MouseCursor() ? juce::MouseCursor (juce::MouseCursor::PointingHandCursor)
                                                            : mats.helpCursor);
+
+    /*  **Buffered, because promoting the stamp moved it from a baked layer into a live child.**
+
+        Four castings drew their version stamp inside a panel background that bakes once to an
+        image, so the string cost nothing per frame. As a component it is repainted with everything
+        else — 20 Hz in the CPU harness — and a gradient fill, a rounded-rect stroke and a
+        per-glyph tracked run are not free at that rate.
+
+        **Elmer's baseline caught it: five editor cells at ratios 1.115 to 1.239.** Only Elmer's
+        fired, and that is the ratio bar working rather than a fault in the other five — the same
+        absolute cost is the largest ratio on the smallest cell, and Elmer's editor is the lowest of
+        the six. The other castings were paying it silently.
+
+        The tab is static except on hover, and `mouseEnter`/`mouseExit` already `repaint()`, so
+        buffering costs one image per tab and re-renders exactly when something changes. */
+    setBufferedToImage (true);
 }
 
 
