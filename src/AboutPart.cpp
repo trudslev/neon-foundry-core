@@ -119,9 +119,9 @@ AboutWordmarkHit::AboutWordmarkHit (juce::MouseCursor helpCursor)
                                                       : helpCursor);
 }
 
-juce::Rectangle<int> AboutWordmarkHit::zone()
+juce::Rectangle<int> AboutWordmarkHit::zone (int frameX)
 {
-    return HeaderGeometry::nameplate();
+    return HeaderGeometry::nameplate().translated (frameX, 0);
 }
 
 void AboutWordmarkHit::mouseUp (const juce::MouseEvent& e)
@@ -130,20 +130,24 @@ void AboutWordmarkHit::mouseUp (const juce::MouseEvent& e)
         onClick();
 }
 
-void AboutTab::layoutFor (int canvasH)
+void AboutTab::layoutFor (int canvasH, int frameX)
 {
     const auto font = faceAt (face, cssPx);
     const int run = juce::roundToInt (trackedWidth (stamp, font, trackingEm * cssPx));
-    setBounds (AboutGeometry::tabFor (canvasH, run));
+    setBounds (AboutGeometry::tabFor (canvasH, run, frameX));
 }
 
 void AboutTab::paint (juce::Graphics& g)
 {
     const auto r = getLocalBounds().toFloat();
 
-    // §2: an inset ring, not a border - HEADER-PART §3 applies unchanged. The recess IS the resting
-    // affordance: a shallow etched plate reads pressable on hardware at rest, which a hover-only
-    // underline does not.
+    /*  §2: an inset ring, not a border - HEADER-PART §3 applies unchanged.
+
+        **Revision 3 STRUCK the argument that "a shallow etched plate reads pressable at rest".**
+        On hardware raised reads pressable and recessed reads engraved, so that reasoning ran
+        backwards and is why §2a added the wordmark as the PRIMARY affordance. The recess stays
+        because it is the right material for a stamp promoted out of the fascia - not because it
+        advertises anything. What advertises is the wordmark, and the hover treatment below. */
     g.setGradientFill ({ hot ? mats.wellTop.brighter (0.18f) : mats.wellTop, 0.0f, r.getY(),
                          hot ? mats.wellBottom.brighter (0.18f) : mats.wellBottom, 0.0f, r.getBottom(),
                          false });
@@ -166,8 +170,8 @@ void AboutTab::mouseEnter (const juce::MouseEvent&) { hot = true;  repaint(); }
 void AboutTab::mouseExit  (const juce::MouseEvent&) { hot = false; repaint(); }
 
 
-AboutBox::AboutBox (AboutMaterials materials, AboutContent content)
-    : mats (std::move (materials)), text (std::move (content))
+AboutBox::AboutBox (AboutMaterials materials, AboutContent content, int frameX)
+    : mats (std::move (materials)), text (std::move (content)), frameOriginX (frameX)
 {
     setVisible (false);
     setWantsKeyboardFocus (true);
@@ -202,7 +206,7 @@ void AboutBox::close()
 
 juce::Rectangle<int> AboutBox::boxBounds() const
 {
-    return AboutGeometry::boxFor (getHeight());
+    return AboutGeometry::boxFor (getHeight(), frameOriginX);
 }
 
 juce::Rectangle<int> AboutBox::closeBounds() const

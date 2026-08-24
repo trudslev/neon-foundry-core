@@ -35,9 +35,24 @@ struct AboutGeometry
     static constexpr int boxH = 540;
     static constexpr float boxRadius = 3.0f;
 
-    /** Canvas width is 1340 in every casting, so x is a constant rather than a law. */
-    static constexpr int canvasW = 1340;
-    static constexpr int boxX = (canvasW - boxW) / 2;                       // 230
+    /** **§4's law is FRAME-local, not canvas-local**, and the two coincide in five castings.
+
+        The frame is 1340 wide everywhere — it is `HeaderGeometry::canvasWidth` and the shared
+        header block sits in it — but Fifth Member's WINDOW is 1444, because it draws two 52 px
+        rack ears outside the frame. Its box is at **282**, which is this 230 plus that 52.
+
+        §4's own table row reads *"Canvas width is 1340 in every casting"*, which is the sentence
+        this parameter exists because of: it is true of the frame and false of one window, and it
+        would have put the box 52 px left of the panel on the one casting whose §11 states the
+        exception explicitly. The part's §0 has it right — *"Fifth Member is also the one x
+        exception … §4's law is frame-local"* — so this is the specification being implemented
+        rather than an accommodation.
+
+        **`frameX` is a required argument everywhere it is needed, never a default.** Five castings
+        write 0. A default would make the common case silent and leave the exception as the only
+        one that has to remember, which is how a figure goes missing in exactly one of six. */
+    static constexpr int frameW = 1340;
+    static constexpr int boxX = (frameW - boxW) / 2;                        // 230, frame-local
 
     /** §4's law. 54 at Reflect-84's 648, 136 at Chorus-60's 812. */
     static constexpr int boxYFor (int canvasH) { return (canvasH - boxH) / 2; }
@@ -119,15 +134,18 @@ struct AboutGeometry
     static constexpr float tabCssPx = 10.0f, tabLineBox = 13.0f;
     static_assert (tabH % 2 == 0, "even, so 0.5x lands on whole pixels");
 
-    static juce::Rectangle<int> tabFor (int canvasH, int textWidth)
+    /** `frameX` is the left edge of the 1340-wide frame inside the window: 0 in five castings and
+        52 in Fifth Member. `tabRight` is frame-local for the same reason `boxX` is — it is the
+        meter row's right edge, and the meter row is in the header block. */
+    static juce::Rectangle<int> tabFor (int canvasH, int textWidth, int frameX)
     {
         const int w = textWidth + 2 * tabPadX;
-        return { tabRight - w, canvasH - tabBottomInset - tabH, w, tabH };
+        return { frameX + tabRight - w, canvasH - tabBottomInset - tabH, w, tabH };
     }
 
-    static juce::Rectangle<int> boxFor (int canvasH)
+    static juce::Rectangle<int> boxFor (int canvasH, int frameX)
     {
-        return { boxX, boxYFor (canvasH), boxW, boxH };
+        return { frameX + boxX, boxYFor (canvasH), boxW, boxH };
     }
 };
 
@@ -235,8 +253,9 @@ public:
 
     std::function<void()> onClick;
 
-    /** Places itself from §2's law against the canvas it sits on. */
-    void layoutFor (int canvasH);
+    /** Places itself from §2's law against the canvas it sits on. `frameX` is the frame's left
+        edge in the window — 0 in five castings, 52 in Fifth Member. */
+    void layoutFor (int canvasH, int frameX);
 
     void paint (juce::Graphics&) override;
     void mouseUp (const juce::MouseEvent&) override;
@@ -281,8 +300,9 @@ public:
     void paint (juce::Graphics&) override {}          // the wordmark is drawn by the panel
     void mouseUp (const juce::MouseEvent&) override;
 
-    /** The nameplate zone, in canvas coordinates. */
-    static juce::Rectangle<int> zone();
+    /** The nameplate zone, in WINDOW coordinates: `HeaderGeometry`'s frame-local rectangle
+        moved by the frame's own origin. */
+    static juce::Rectangle<int> zone (int frameX);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AboutWordmarkHit)
 };
@@ -291,7 +311,7 @@ public:
 class AboutBox final : public juce::Component
 {
 public:
-    AboutBox (AboutMaterials materials, AboutContent content);
+    AboutBox (AboutMaterials materials, AboutContent content, int frameX);
     ~AboutBox() override;
 
     /** Opens over `canvas`, which must be the editor's untransformed content bounds. */
@@ -318,6 +338,7 @@ private:
 
     AboutMaterials mats;
     AboutContent text;
+    int frameOriginX;
     bool closeHot = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AboutBox)

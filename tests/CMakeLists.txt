@@ -13,6 +13,7 @@ target_sources(NeonFoundryCoreTests PRIVATE
     UserEditGateTests.cpp
     ProcessorHarnessTests.cpp
     BlockChunkingTests.cpp
+    AboutPartTests.cpp
     HeaderPartTests.cpp
     CpuBaselineTests.cpp)
 
