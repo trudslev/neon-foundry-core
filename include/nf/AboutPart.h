@@ -243,6 +243,72 @@ struct AboutMaterials
 };
 
 
+/** §2b: **the point above which a reported system-cursor size counts as ENLARGED.**
+
+    **32 points, chosen — but now bracketed by two real readings rather than by an analogy.** Both
+    measured on the development machine, the second with the Accessibility pointer size actually
+    turned up:
+
+    | Setting | `currentSystemCursor` | `max(w, h)` | Verdict at 32 |
+    |---|---|---|---|
+    | default | **23 x 22** | 23 | not enlarged |
+    | enlarged | **28 x 40** | 40 | enlarged |
+
+    So 32 sits at **1.39x the default** and **0.80x the enlarged** — clear of both, with the nearer
+    margin still 39 %. Apple publishes no default size, so the low end may vary by macOS version or
+    cursor theme; the margin is what absorbs that.
+
+    **The enlarged arrow is not the default one scaled, and that is the load-bearing detail.**
+    23 x 22 goes to 28 x 40 — 1.22x wide and 1.82x tall. **Testing WIDTH alone would have missed
+    this enlargement entirely**, since 28 is under 32. That is why the check is on the larger
+    dimension, and it is measured rather than assumed.
+
+    **The failure direction is what makes a chosen number acceptable.** Too low, and a reader at the
+    default size sees `PointingHandCursor` — the signal is lost and nothing is harmed. Too high, and
+    a reader with an enlarged pointer sees a 20 x 24 bitmap, which is the failure this mechanism
+    exists to prevent. So err low, and 32 errs low.
+
+    **The failure direction is what makes a chosen number acceptable here.** Too low, and a reader
+    at the default size sees `PointingHandCursor` — the signal is lost and nothing is harmed. Too
+    high, and a reader with an enlarged pointer sees a 20 x 24 bitmap, which is the failure this
+    whole mechanism exists to prevent. So err low, and 32 errs low. */
+constexpr double enlargedPointerThresholdPoints = 32.0;
+
+/** Whether the reader has enlarged their system pointer.
+
+    **macOS only.** Returns false everywhere else, and that is correct rather than a stub:
+
+    | | |
+    |---|---|
+    | **Windows** | **JUCE already rescales custom cursors**, in `juce_Windowing_windows.cpp`: it queries `GetSystemMetricsForDpi (SM_CXCURSOR)`, rescales the image, scales the hotspot with it, and caches per size. There is nothing to detect because there is nothing to fix |
+    | **Linux** | **a gap, and one with nothing to read.** `createCustomMouseCursorInfo` uses the image at its own size with the hotspot unscaled, and X11 cursor sizing is per-theme — `Xcursor.size`, `XCURSOR_SIZE` — rather than one system setting. There is no equivalent value to test |
+
+    On macOS it reads `NSCursor.currentSystemCursor`, whose image size tracks the Accessibility
+    pointer-size setting — confirmed on a machine with the setting changed, which is the one thing
+    that could not be established from a default-configured one.
+
+    **Two things about that reading were suspected and then settled by measurement, and both went
+    the other way from the guess:**
+
+    - **It does NOT report the cursor's SHAPE.** The obvious worry — that `currentSystemCursor`
+      returns whatever the pointer is currently over, so an I-beam would read as an enlargement —
+      is refuted: sampled at the menu bar, the desktop centre and two corners it reads **28 x 40 at
+      every position**. Stable, so it is the pointer, not the surface under it.
+    - **`CFPreferencesCopyAppValue ("mouseDriverCursorSize", "com.apple.universalaccess")` is
+      WRONG, not merely sandbox-limited.** With the pointer visibly enlarged it reads **1.000** —
+      the value meaning default. That key was the tidier-looking detector and it disagrees with the
+      observable cursor, which settles the choice by measurement rather than by the sandbox
+      argument alone. (The sandbox argument still holds: an AUv3 could not read it anyway.) */
+bool systemPointerIsEnlarged();
+
+/** The cursor an About affordance should show **right now**.
+
+    Call it from `mouseEnter`, not from a constructor: macOS posts no notification when the pointer
+    size changes, so a value read once goes stale. `mouseEnter` fires whenever the pointer crosses
+    the zone, which makes the reading current by construction and costs one query per crossing. */
+juce::MouseCursor aboutCursor (const juce::MouseCursor& custom);
+
+
 /** The five strings §1 names, plus the suite release.
 
     §1: **suite release and plugin version are separate version strings on separate lines, both
@@ -359,10 +425,16 @@ public:
 
     void paint (juce::Graphics&) override {}          // the wordmark is drawn by the panel
     void mouseUp (const juce::MouseEvent&) override;
+    void mouseEnter (const juce::MouseEvent&) override;
 
     /** The nameplate zone, in WINDOW coordinates: `HeaderGeometry`'s frame-local rectangle
         moved by the frame's own origin. */
     static juce::Rectangle<int> zone (int frameX);
+
+private:
+    /** Kept so `mouseEnter` can re-decide. The constructor's choice would be stale the moment the
+        reader changed their pointer size, and macOS gives no notification to hang an update on. */
+    juce::MouseCursor custom;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AboutWordmarkHit)
 };
