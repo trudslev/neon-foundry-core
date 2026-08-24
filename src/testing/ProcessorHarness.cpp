@@ -129,6 +129,24 @@ namespace
     `operator new` no longer calls `std::malloc`, because that would now route through the
     interposed `malloc` and count twice. Every override notes once and then calls `rawAlloc`.
 */
+/*  **MSVC cannot do this, and it fails as a LINK error rather than a silent miss.**
+
+    Replacing `malloc` by defining it works on macOS and Linux because these definitions live in the
+    main executable and the dynamic linker searches it first. On Windows the CRT's allocators are
+    already in `ucrt.lib`, so a second definition is `LNK2005: calloc already defined ... fatal error
+    LNK1169`. Elmer's first Windows build in the suite's history said exactly that.
+
+    **The `operator new` / `delete` overrides below are OUTSIDE this guard and take on every
+    platform** — they are what the detector had before the interposition was added, and MSVC has no
+    objection to them.
+
+    **What Windows therefore cannot see is the thing the interposition was added for.** An
+    `AudioBuffer::setSize` growth reaches `std::malloc` through `HeapBlock` and never touches
+    `operator new`, so on Windows it counts **zero** — exactly how every row read before this
+    existed. That is a real hole, and `AllocationSentinel::interposesMalloc()` reports it so a clean
+    row on Windows is not mistaken for a clean row on macOS. */
+#if ! defined (_WIN32)
+
 extern "C" void* malloc (size_t size)
 {
     note (size, true);
@@ -177,6 +195,8 @@ extern "C" void* realloc (void* old, size_t size)
 // "no allocations" and is indistinguishable from a pass. AllocationSentinel's constructor is defined
 // below, in this same file, so using the sentinel is what drags the overrides in.
 
+#endif // ! _WIN32 — the operator overrides below take on EVERY platform
+
 void* operator new (size_t size)
 {
     note (size);
@@ -211,7 +231,9 @@ void operator delete[] (void* p) noexcept { noteFree (p); rawFree (p); }
 void operator delete (void* p, size_t) noexcept { noteFree (p); rawFree (p); }
 void operator delete[] (void* p, size_t) noexcept { noteFree (p); rawFree (p); }
 
+#if ! defined (_WIN32)
 extern "C" void free (void* p) { noteFree (p); rawFree (p); }
+#endif
 
 namespace nf::testing
 {

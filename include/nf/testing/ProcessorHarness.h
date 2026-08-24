@@ -91,6 +91,30 @@ public:
     */
     int frees() const noexcept;
 
+    /** **Whether this build can see `malloc` at all**, which is a platform fact and not a state.
+
+        `true` on macOS and Linux, where the `extern "C"` definitions interpose the CRT's. **`false`
+        on Windows**, where MSVC refuses a second definition of `malloc` outright — `LNK2005 ...
+        fatal error LNK1169` — so only `operator new` / `delete` are counted there.
+
+        **Read this before believing a clean row.** An `AudioBuffer::setSize` growth reaches
+        `std::malloc` through `HeapBlock` and never touches `operator new`, so on Windows it counts
+        **zero** — which is indistinguishable from no allocation at all. This suite already learned
+        that lesson once, when the detector was `operator new`-only everywhere and every buffer
+        growth in the codebase was invisible to it; a row that reads clean because the instrument
+        cannot see the units is not a measurement.
+
+        **So a caller that prints allocation figures must print this beside them.** "Measured clean"
+        and "cannot see malloc here" are different claims and must not render the same. */
+    static constexpr bool interposesMalloc() noexcept
+    {
+       #if defined (_WIN32)
+        return false;
+       #else
+        return true;
+       #endif
+    }
+
     /** How much of `count()`/`bytes()` arrived through `malloc` rather than `operator new`.
 
         `juce::AudioBuffer::setSize` allocates through `HeapBlock` -> `std::malloc`, so before the

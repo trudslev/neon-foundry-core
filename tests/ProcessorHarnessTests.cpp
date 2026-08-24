@@ -420,6 +420,27 @@ public:
             logMessage ("  AudioBuffer 2 x 64 -> 2 x 65536 grew by " + juce::String (allocs)
                             + " allocation(s), " + juce::String ((int) bytes) + " bytes");
 
+            /*  **On Windows this arm asserts the OPPOSITE, and that is not a skip.**
+
+                MSVC refuses a second definition of `malloc`, so the interposition is compiled out
+                there and a buffer growth — which reaches `std::malloc` and never `operator new` —
+                counts zero. Skipping the arm would leave that unstated; asserting the zero states
+                it, and **fires the day Windows gains the capability**, which is when someone needs
+                to know the rows have changed meaning. */
+            if (! nf::testing::AllocationSentinel::interposesMalloc())
+            {
+                logMessage ("  malloc is NOT interposed on this platform — a buffer growth is "
+                            "invisible here, and that is asserted rather than skipped");
+
+                expectEquals (allocs, 0,
+                              "this platform cannot interpose malloc, so an AudioBuffer growth "
+                              "should count ZERO. A non-zero figure means the capability changed "
+                              "and every allocation row on this platform now means something "
+                              "different from what it meant before");
+                expectEquals (viaMalloc, 0, "nothing can be attributed to malloc without it");
+                return;
+            }
+
             expectGreaterThan (allocs, 0,
                                "**THE SENTINEL STILL CANNOT SEE AudioBuffer GROWTH.** setSize reaches "
                                "std::malloc through HeapBlock, so an operator-new-only detector counts "
