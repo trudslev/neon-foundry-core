@@ -155,6 +155,26 @@ struct CpuComparison
     is believed; one failing at 30 % is a regression. That is a property of this instrument on this
     machine, which is why the figure lives beside the measurement that produced it and not in prose.
 */
+/** The machine, in the exact form a baseline's provenance records it.
+
+    One function so the writer and the reader cannot describe the same machine two ways — the
+    string is built here and written from here, rather than composed at each of six call sites. */
+juce::String currentMachine();
+
+/** Whether this baseline was taken on the machine now running.
+
+    **A CPU baseline is a property of the machine that recorded it, and asserting one somewhere else
+    is asserting a figure about different hardware.** Elmer's first CI run failed five editor cells
+    at 1.26x to 1.39x against figures taken on `Mac15,13, 8 cores`; the runner is not that machine.
+    The closed cells were over by the same proportion — the free control saying the whole column was
+    the machine rather than the code.
+
+    So a caller asserts when this is true and **reports** when it is false. That keeps the bar
+    meaningful where it means something and keeps the measurement visible everywhere else, instead
+    of the two other options: a bar that fails on every runner, or a suite that skips its own
+    performance test wherever it is inconvenient. */
+bool baselineTakenOnThisMachine (const CpuProvenance&);
+
 std::vector<CpuComparison> compareToBaseline (const std::vector<CpuCell>& measured,
                                               const CpuBaseline&, double tolerance = 1.10,
                                               double noiseFloor = 0.01);

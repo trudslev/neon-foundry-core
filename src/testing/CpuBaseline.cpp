@@ -175,6 +175,19 @@ CpuCell measureCpu (juce::AudioProcessor& processor, int blockSize, double sampl
     return cell;
 }
 
+juce::String currentMachine()
+{
+    return juce::SystemStats::getDeviceDescription()
+         + ", " + juce::String (juce::SystemStats::getNumCpus()) + " cores";
+}
+
+bool baselineTakenOnThisMachine (const CpuProvenance& p)
+{
+    // Exact match on the recorded string. A looser test — same model family, same core count — would
+    // be guessing at which differences move a CPU figure, and the answer is that all of them do.
+    return p.machine == currentMachine();
+}
+
 juce::String CpuComparison::describe() const
 {
     if (belowNoiseFloor)
