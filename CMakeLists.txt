@@ -135,6 +135,18 @@ add_library(neon_foundry_core STATIC ${NF_CORE_SOURCES})
 
 add_library(nf::core ALIAS neon_foundry_core)
 
+# **A STATIC library linked into a SHARED one must be position-independent, and only Linux says so.**
+#
+# Every casting's VST3 is a shared object, and it links `libneon_foundry_core.a`. On Linux that is a
+# hard link error:
+#
+#     relocation R_X86_64_PC32 against symbol `_ZTVN2nf8AboutBoxE' ... final link failed: bad value
+#
+# Mach-O is always position-independent, so macOS never had an opinion; Windows DLLs resolve this
+# differently again. **The requirement is real on all three and enforced on one** — which is why it
+# survived until the first Linux build in the suite's history.
+set_target_properties(neon_foundry_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 target_include_directories(neon_foundry_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 
