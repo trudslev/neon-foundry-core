@@ -154,6 +154,26 @@ target_link_libraries(neon_foundry_core PUBLIC
     # every draw* alone.
     juce::juce_gui_basics)
 
+# **The two feature flags every casting sets, set here too — and the omission was invisible on two
+# platforms of three.**
+#
+# `juce_audio_processors` pulls in `juce_gui_extra`, which core therefore compiles. That module's
+# Linux branch is guarded `#elif (JUCE_LINUX || JUCE_BSD) && JUCE_WEB_BROWSER` and includes
+# `<gtk/gtk.h>`. `JUCE_WEB_BROWSER` defaults to **1**, so core asked for GTK on Linux while all six
+# castings had already declared they do not want a web browser — on their own targets, which does
+# nothing for this one.
+#
+# On macOS and Windows it compiles regardless, because WebKit and WebView2 are simply there. It fails
+# only on Linux, which is why it survived: three castings had never run CI at all and the other three
+# are macOS-first, so the Linux branch of this dependency had never been configured by anything.
+#
+# **The fix removes the dependency rather than installing it.** Adding `libgtk-3-dev` to the runners
+# would also have gone green, and would have left the suite building a web browser it states six
+# times over that it does not use.
+target_compile_definitions(neon_foundry_core PUBLIC
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0)
+
 # Core carries NO company or product identity. Those are the casting's, passed in as arguments —
 # see UserProgramDirectory.h. A shared default here would be exactly the hand-synced constant that
 # drifted to a dead company name in CHORUS-60 and quietly pointed saved Programs at a directory
