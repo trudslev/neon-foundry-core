@@ -126,8 +126,13 @@ struct AboutGeometry
     static constexpr float veilAlpha = 0.72f;
 
     // --- the tab, §2 and §9.2 -----------------------------------------------------------------
-    /** §2: the meter row's right edge, closing the header block's own 22 px left padding. */
-    static constexpr int tabRight = 1302;
+    /** §2: the meter row's right edge, closing the header block's own 22 px left padding.
+
+        **Derived, not re-typed.** `HeaderGeometry::bandRightEdge` is the same 1302 and is where the
+        figure comes from; taking it from there means that if the header band ever moves, the tab
+        moves with it or this file fails to compile. A literal here would be indistinguishable from
+        the derivation for as long as they agree — which is the only window in which they differ. */
+    static constexpr int tabRight = HeaderGeometry::bandRightEdge;   // 1302
     static constexpr int tabBottomInset = 20;                    // bottom edge = canvasH - 20
     static constexpr int tabH = 24;                              // 13 line box + 5.5 either side
     static constexpr int tabPadX = 10;                           // width is shrink-to-fit
