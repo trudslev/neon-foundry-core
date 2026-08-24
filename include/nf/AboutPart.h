@@ -198,6 +198,33 @@ struct AboutMaterials
           default, swapping to `PointingHandCursor` only when the accessibility pointer size is
           enlarged.
 
+        **THE DETECTION EXISTS. Established 2026-08-24 by probing, because "about twenty lines" was
+        an estimate and this suite has a name for those.** What is actually true:
+
+        | | |
+        |---|---|
+        | **Windows** | **JUCE ALREADY DOES IT.** `juce_Windowing_windows.cpp` rescales a custom cursor to `GetSystemMetricsForDpi (SM_CXCURSOR)`, scales the hotspot with it and caches per size. Nothing to write |
+        | **macOS** | `createCursor` passes the image straight through — the gap. Two detection routes, both readable: `NSCursor.currentSystemCursor`, whose image measures **23 x 22 points with four representations** on this machine, and is **public API**; and `CFPreferencesCopyAppValue ("mouseDriverCursorSize", "com.apple.universalaccess")`, which reads ABSENT at default |
+        | **Linux** | `createCustomMouseCursorInfo` uses the image at its own size, hotspot unscaled — the same gap, and X11 sizing is per-theme (`Xcursor.size`, `XCURSOR_SIZE`) rather than one setting |
+
+        **So it is a macOS-and-Linux question, not a suite-wide one**, and on the platform that
+        ships first there is a public API for it.
+
+        **And the freshness objection was wrong too.** The concern was that no notification fires
+        for the setting, so a value read at construction goes stale. `mouseEnter` already exists on
+        both affordances and fires whenever the pointer crosses the zone — reading there is cheap
+        and current by construction.
+
+        **What is NOT established**, and cannot be from here: that the reported size actually
+        *changes* when the setting does. Confirming that means changing a system-wide accessibility
+        setting on someone's machine, so it needs a machine with it already enabled. Everything
+        above is a reading of what the APIs return today at the default setting.
+
+        **This is the one place the suite's own position argues against accepting the cost.** The
+        reader who pays it is the reader with an enlarged pointer — which is the reader BRAND.md's
+        7:1 floor and its 4x scaling range exist for. Recorded as a decision with its facts rather
+        than a note with an estimate.
+
         **The accessibility cost is real and is accepted rather than mitigated.** An app-supplied
         cursor never gets the window server's larger renditions, so a reader running an enlarged
         pointer sees a 20 x 24 bitmap. That is a stated cost of the ruling, not something this
