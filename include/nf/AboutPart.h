@@ -243,6 +243,63 @@ struct AboutMaterials
 };
 
 
+/** §2b: **the multiplier above which the system pointer counts as ENLARGED.**
+
+    macOS's Accessibility pointer size is a **continuous multiplier**, not a step, and it is written
+    to `com.apple.universalaccess`'s `mouseDriverCursorSize`. Watched at 4 Hz through a live drag
+    from Normal to Large and back, it reads:
+
+        1.000 -> 2.026 -> 3.433 -> 4.000 -> 3.620 -> 2.694 -> 1.671 -> 1.000
+
+    So default is exactly **1.000** — or the key is absent, on a machine that has never touched the
+    slider — and the smallest non-default value observed anywhere in the drag was **1.361**.
+
+    **1.01 therefore sits clear of both ends**: above floating-point noise around an exact 1.000,
+    and far below any value a real drag produces. It is not a guess about where a step lands,
+    because there are no steps.
+
+    **And it errs in the safe direction.** Too low, and a reader at the default size sees
+    `PointingHandCursor` — the signal is lost, nothing is harmed. Too high, and a reader with an
+    enlarged pointer sees a 20 x 24 bitmap, which is the failure this mechanism exists to prevent. */
+constexpr double enlargedPointerMultiplier = 1.01;
+
+/** Whether the reader has enlarged their system pointer.
+
+    **macOS only.** Returns false everywhere else, and that is correct rather than a stub:
+
+    | | |
+    |---|---|
+    | **Windows** | **JUCE already rescales custom cursors**, in `juce_Windowing_windows.cpp`: it queries `GetSystemMetricsForDpi (SM_CXCURSOR)`, rescales the image, scales the hotspot with it, and caches per size. There is nothing to detect because there is nothing to fix |
+    | **Linux** | **a gap, and one with nothing to read.** `createCustomMouseCursorInfo` uses the image at its own size with the hotspot unscaled, and X11 cursor sizing is per-theme — `Xcursor.size`, `XCURSOR_SIZE` — rather than one system setting. There is no equivalent value to test |
+
+    On macOS it reads `mouseDriverCursorSize` from `com.apple.universalaccess`, **chosen by watching
+    a live slider drag rather than by reasoning about the APIs.** Polled at 4 Hz for 90 seconds
+    while the pointer size went Normal -> Large -> Normal:
+
+    | | Through that drag |
+    |---|---|
+    | `mouseDriverCursorSize` | **1.000 -> 4.000 -> 1.000**, tracking continuously, with no synchronize call and no notification |
+    | `NSCursor.currentSystemCursor` | **28 x 40 throughout — it never moved**, across a fourfold change |
+
+    **An earlier version of this part was built on `currentSystemCursor` and was wrong.** It reports
+    the cursor being SHOWN, so its size is a property of the shape: the same run caught a 0.3 s blip
+    to 18 x 28 as the pointer crossed something else, before the slider was touched. The two
+    readings that had looked like evidence — 23 x 22 then 28 x 40 — were two shapes at one size.
+
+    **The sandbox caveat is real and currently theoretical.** `CFPreferencesCopyAppValue` cannot
+    read another application's domain under App Sandbox, so an AUv3 would read default and keep the
+    custom cursor. No casting builds an AUv3 — the format lists are AU, VST3 and Standalone — so
+    nothing shipping is affected. Recorded rather than guarded against. */
+bool systemPointerIsEnlarged();
+
+/** The cursor an About affordance should show **right now**.
+
+    Call it from `mouseEnter`, not from a constructor: macOS posts no notification when the pointer
+    size changes, so a value read once goes stale. `mouseEnter` fires whenever the pointer crosses
+    the zone, which makes the reading current by construction and costs one query per crossing. */
+juce::MouseCursor aboutCursor (const juce::MouseCursor& custom);
+
+
 /** The five strings §1 names, plus the suite release.
 
     §1: **suite release and plugin version are separate version strings on separate lines, both
@@ -359,10 +416,16 @@ public:
 
     void paint (juce::Graphics&) override {}          // the wordmark is drawn by the panel
     void mouseUp (const juce::MouseEvent&) override;
+    void mouseEnter (const juce::MouseEvent&) override;
 
     /** The nameplate zone, in WINDOW coordinates: `HeaderGeometry`'s frame-local rectangle
         moved by the frame's own origin. */
     static juce::Rectangle<int> zone (int frameX);
+
+private:
+    /** Kept so `mouseEnter` can re-decide. The constructor's choice would be stale the moment the
+        reader changed their pointer size, and macOS gives no notification to hang an update on. */
+    juce::MouseCursor custom;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AboutWordmarkHit)
 };

@@ -84,6 +84,54 @@ public:
                 "§4's 45-character budget, measured on the suite's longest slug");
         expect (! nf::AboutBox::repositoryFits (juce::String::repeatedString ("x", 46)),
                 "the budget must be able to fail");
+
+        beginTest ("§2b's pointer-size hybrid picks the right cursor on each branch");
+
+        /*  **What this can and cannot assert.** `systemPointerIsEnlarged()` reads the machine, so
+            its VALUE is not assertable — a green run here says nothing about which branch ran.
+            What is assertable is that `aboutCursor` routes correctly given each answer, and that
+            the threshold sits where the reasoning says. Stated rather than left implied, because a
+            test that only observes today's machine reads exactly like one that checks something. */
+
+        const juce::MouseCursor custom (juce::Image (juce::Image::ARGB, 64, 64, true), 7, 4, 2.0f);
+        const juce::MouseCursor pointing (juce::MouseCursor::PointingHandCursor);
+
+        // An empty cursor is never handed on: it would silently be the arrow.
+        expect (nf::aboutCursor (juce::MouseCursor()) == pointing,
+                "an empty custom cursor must fall back explicitly");
+
+        // And a real one survives whenever the pointer is not enlarged. On a default-configured
+        // machine that is the branch this exercises; on an enlarged one it exercises the other.
+        const bool enlarged = nf::systemPointerIsEnlarged();
+        logMessage (juce::String ("  system pointer reads ")
+                    + (enlarged ? "ENLARGED — aboutCursor should downgrade"
+                                : "default — aboutCursor should keep the custom cursor"));
+        expect (nf::aboutCursor (custom) == (enlarged ? pointing : custom),
+                "aboutCursor did not route to the branch systemPointerIsEnlarged reports");
+
+        /*  **The threshold, against the values a live drag actually produces.** Polled at 4 Hz
+            while the Accessibility pointer size went Normal -> Large -> Normal, the multiplier
+            read 1.000 at rest and never came back below 1.361 once moved. There are no steps —
+            it is continuous — so the only question is whether 1.01 clears an exact default
+            without reaching a real drag. */
+        constexpr double measuredDefault       = 1.000;
+        constexpr double smallestMeasuredDrag  = 1.361;
+
+        expect (nf::enlargedPointerMultiplier > measuredDefault,
+                "the threshold must not trip at the default 1.000");
+        expect (nf::enlargedPointerMultiplier < smallestMeasuredDrag,
+                "and must trip at the smallest value a real drag produced");
+
+        /*  The margin above 1.000 exists for floating-point noise around an exact value, not for a
+            step that might land low — asserted small so nobody widens it into the drag range. */
+        expect (nf::enlargedPointerMultiplier - measuredDefault < 0.05,
+                "the margin above default is for float noise, not headroom");
+
+       #if ! JUCE_MAC
+        expect (! nf::systemPointerIsEnlarged(),
+                "off macOS this is false by design: Windows needs no detection because JUCE already "
+                "rescales, and X11 has no equivalent value to read");
+       #endif
     }
 };
 

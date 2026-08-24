@@ -119,9 +119,19 @@ if(NOT PROJECT_IS_TOP_LEVEL)
     endif()
 endif()
 
-add_library(neon_foundry_core STATIC
+# `SystemPointer.mm` is Apple-only and is the whole of core's Objective-C++ surface: §2b's pointer
+# size has no public route but AppKit's NSCursor. Windows needs no detection at all — JUCE already
+# rescales custom cursors there — and X11 has no equivalent value to read, so both fall to the
+# `#if ! JUCE_MAC` definition in AboutPart.cpp rather than to a stub file.
+set(NF_CORE_SOURCES
     src/UserProgramDirectory.cpp
     src/AboutPart.cpp)
+
+if(APPLE)
+    list(APPEND NF_CORE_SOURCES src/SystemPointer.mm)
+endif()
+
+add_library(neon_foundry_core STATIC ${NF_CORE_SOURCES})
 
 add_library(nf::core ALIAS neon_foundry_core)
 
