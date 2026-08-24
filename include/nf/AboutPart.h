@@ -184,26 +184,35 @@ struct AboutMaterials
     juce::Typeface::Ptr proseFace;   ///< Barlow Condensed 500
     juce::Typeface::Ptr monoFace;    ///< the casting's own mono
 
-    /*  **§2b revision 4: the cursor is `PointingHandCursor`, and it is NOT a material.**
+    /*  **RULED by Sune 2026-08-24: the custom help cursor is RESTORED, superseding §2b revision 4.**
 
-        Revision 3 specified `help` and had the better argument — `pointer` says *this acts*, `help`
-        says *this explains something*, and an About box explains. What killed it is a fact about
-        the platform rather than a change of taste: JUCE has no help cursor in
-        `StandardCursorType`, so `help` can only be a custom `juce::MouseCursor`, which becomes an
-        app-supplied `NSImage` — and **macOS's Accessibility pointer-size setting does not scale
-        one.** A reader running an enlarged pointer would get a system arrow up to 4x everywhere and
-        a 20 x 24 bitmap on the two elements the part exists to have noticed.
+        Revision 4 struck it on an accessibility argument this build supplied — and that argument was
+        given to the designers with **an error and an omission in it**, so the ruling rested on a
+        partly wrong input:
 
-        **A signal that degrades for the reader most likely to need it is a signal with a condition
-        on it**, so it is struck. The distinction lost is between two kinds of *this is
-        interactive*, and both affordances open the same box, so nothing is claimed that the box
-        does not deliver. The hover treatment carries the distinction now.
+        - **Wrong**: it said JUCE's `fromHIServices` path *"ends in `setSize:` and hands a fixed
+          NSImage"*, implying Apple's own help artwork was no better than a bitmap. It is not fixed —
+          it loads Apple's `cursor.pdf` and rasterises it at 1x, 2x, 3x and 4x, adding all four as
+          representations. The `setSize` is per-representation and is what MAKES it multi-resolution.
+        - **Omitted**: it presented a binary, when a third option existed — the custom cursor by
+          default, swapping to `PointingHandCursor` only when the accessibility pointer size is
+          enlarged.
 
-        **The field is GONE rather than defaulted**, which is the part that matters here: a
-        `helpCursor` member every casting sets to the same standard cursor is six copies of one
-        decision and six chances to differ. Core sets it, so a casting cannot get it wrong — the
-        same reduction as `nf::connectUserEdit`, where the fix was to make the omission
-        inexpressible rather than to write a rule about it. */
+        **The accessibility cost is real and is accepted rather than mitigated.** An app-supplied
+        cursor never gets the window server's larger renditions, so a reader running an enlarged
+        pointer sees a 20 x 24 bitmap. That is a stated cost of the ruling, not something this
+        comment should pretend away.
+
+        The field is a MATERIAL again, and the argument for deleting it does not survive the change:
+        it was *"six copies of one decision"* while every casting passed the same standard cursor.
+        An embedded per-casting asset is not that. */
+    /** §2b: **`help`, not `pointer`, on both affordances.** `pointer` says *this acts*; `help` says
+        *this explains something*, which is what an About box is — the one signal that costs no ink,
+        changes nothing at rest, and fires on an ordinary sweep. JUCE has no help cursor in
+        `StandardCursorType`, so the casting builds one from the delivered
+        `shared/assets/about-cursor-*.png` and hands it over. If it is ever empty the fallback is
+        `PointingHandCursor`, which loses the distinction rather than the affordance. */
+    juce::MouseCursor helpCursor;
 };
 
 
@@ -317,7 +326,7 @@ private:
 class AboutWordmarkHit final : public juce::Component
 {
 public:
-    AboutWordmarkHit();
+    explicit AboutWordmarkHit (juce::MouseCursor helpCursor);
 
     std::function<void()> onClick;
 
