@@ -17,8 +17,31 @@ project(NeonFoundryCore VERSION 1.0.0 LANGUAGES CXX)
 # It is the execution charset, and /utf-8 sets both source and execution to UTF-8.
 #
 # Nothing changes on macOS or Linux, where UTF-8 is already both.
+#
+# **AND THE REGRESSION IS A HARD ERROR, not a warning nobody reads.**
+#
+# /utf-8 prevents the substitution; /we4566 and /we4819 make its REMOVAL impossible to ship. The
+# 168 warnings that named this defect were in the build output the whole time and nobody read them
+# — the third finding this week already sitting in a channel that is unread by construction: long,
+# mostly noise, and a green tick is not investigated.
+#
+# **A warning COUNT with a growth baseline was the other candidate, and it was rejected.** Its
+# baseline is taken from today's output, so the 168 would have been baselined in as normal and the
+# check could not have found the defect that prompted it — a check whose input comes from the thing
+# it checks. A count also keeps quantity and discards WHICH warning, which is the axis that matters
+# here: C4566 is silent data corruption and C4100 is noise. And "three more than baseline" invites
+# bumping the baseline, which is how a check stops being trusted.
+#
+# **This list is EVIDENTIAL: a class goes on it when it has cost a finding.** That is also its
+# limitation, stated rather than left to be discovered — it catches only classes somebody named,
+# and every class found this week was one nobody had named until it cost something.
+#
+# GCC gets no flag: its execution charset is UTF-8 already, so the class does not arise, and an
+# unrecognised -Werror= is itself an error rather than a no-op, so nothing is added blind.
 if(MSVC)
-    add_compile_options(/utf-8)
+    add_compile_options(/utf-8 /we4566 /we4819)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    add_compile_options(-Werror=invalid-source-encoding)
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
