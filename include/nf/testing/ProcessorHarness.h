@@ -108,6 +108,71 @@ public:
 
         **So a caller that prints allocation figures must print this beside them.** "Measured clean"
         and "cannot see malloc here" are different claims and must not render the same. */
+    /** **What the counters actually INCLUDE. Three populations under one name.**
+
+        Measured 2026-08-25, the first time any casting built on Linux, by arming the sentinel around
+        an allocation made INSIDE libc (`realpath (p, nullptr)`) and around one of our own:
+
+        | | macOS | glibc Linux | Windows |
+        |---|---|---|---|
+        | our own `AudioBuffer::setSize` growth | **1** | **1** | **0** |
+        | a libc-internal `malloc`               | **0** | **1** | n/a  |
+
+        The interposition is identical in every build; the LOADER differs. macOS uses a two-level
+        namespace, so libSystem's internal `malloc` calls bind to libSystem's own. ELF is a flat
+        namespace, so glibc's internal calls bind to OURS. And MSVC refuses a second definition of
+        `malloc` outright, so on Windows nothing reaching `std::malloc` is counted at all — which
+        is why the growth this whole interposition was added for reads **zero** there.
+
+        **No platform is the norm and the others deviations.** Reading macOS as correct is exactly
+        what would let someone take a clean Windows row as evidence, when that class of allocation
+        has never been visible there. */
+    enum class Coverage
+    {
+        operatorNewOnly,         /**< Windows. `malloc` is invisible: an `AudioBuffer` growth counts 0. */
+        ourCode,                 /**< macOS. Our code and JUCE, via `operator new` and `malloc`. */
+        ourCodeAndLibcInternals  /**< glibc Linux. The above, PLUS glibc's own internal allocations. */
+    };
+
+    static constexpr Coverage coverage() noexcept
+    {
+       #if defined (_WIN32)
+        return Coverage::operatorNewOnly;
+       #elif defined (__APPLE__)
+        return Coverage::ourCode;
+       #elif defined (__GLIBC__)
+        return Coverage::ourCodeAndLibcInternals;
+       #else
+        return Coverage::operatorNewOnly;   // no escape hatch, so no interposition — see rawAlloc
+       #endif
+    }
+
+    /** One line naming the population, for a log. A figure without this beside it is not a claim. */
+    static const char* describeCoverage() noexcept;
+
+    /** **Does a NON-ZERO count imply OUR code allocated?**
+
+        False on glibc Linux, where an incidental allocation inside libc that happens to land in the
+        armed window is counted and is not a defect. That is not a small effect: it made Elmer's
+        rows fail with 3 alloc (64 bytes), then 1 alloc (16 bytes), then pass 20 of 20 — which reads
+        as a flaky test, and a flaky test is how a check stops being trusted. */
+    static constexpr bool countIsAttributable() noexcept
+    {
+        return coverage() != Coverage::ourCodeAndLibcInternals;
+    }
+
+    /** **Does a ZERO count mean there was nothing to find?**
+
+        False on Windows, where `malloc` is uncounted, so a clean row is silent about every
+        `AudioBuffer` growth in the process rather than clearing it.
+
+        Note this runs the OPPOSITE way to `countIsAttributable`: glibc Linux has the most
+        trustworthy clean row of the three, because its population is a superset. */
+    static constexpr bool cleanRowIsConclusive() noexcept
+    {
+        return coverage() != Coverage::operatorNewOnly;
+    }
+
     static constexpr bool interposesMalloc() noexcept
     {
        #if defined (_WIN32)
@@ -143,6 +208,23 @@ private:
 };
 
 /** What an allocation probe saw. */
+/** **The vacuity guard for a row that is REPORTED rather than asserted.**
+
+    A reported row cannot fail, so nothing in it would notice the instrument dying — every figure
+    would read zero and every row would look clean, which is precisely how the detector behaved
+    before the interposition existed. This arms the sentinel around an allocation that provably
+    happens and returns whether it was counted.
+
+    **It allocates through `operator new`, not `malloc`, on purpose.** The `operator new` overrides
+    take on every platform; `malloc` is refused by MSVC. So this is the one control all three
+    coverages can see, and a false here means the sentinel is dead rather than that the platform is
+    Windows.
+
+    Same role as `comparisons.size() > 0` in the CPU baseline suite: the assertion that survives when
+    the judgement is switched off. */
+bool sentinelIsLive();
+
+//==============================================================================
 struct AllocationReport
 {
     int preparedBlockSize = 0;

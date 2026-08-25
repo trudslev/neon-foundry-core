@@ -8,6 +8,7 @@
 #include <chrono>
 #include <thread>
 #include <new>
+#include <vector>
 
 #if defined (__APPLE__)
  #include <malloc/malloc.h>
@@ -286,6 +287,44 @@ int AllocationSentinel::count() const noexcept
 size_t AllocationSentinel::bytes() const noexcept
 {
     return allocationBytes.load (std::memory_order_relaxed);
+}
+
+const char* AllocationSentinel::describeCoverage() noexcept
+{
+    switch (coverage())
+    {
+        case Coverage::operatorNewOnly:
+            return "coverage: operator new ONLY — malloc is uncounted here, so an AudioBuffer "
+                   "growth reads zero and a clean row does not clear one";
+        case Coverage::ourCode:
+            return "coverage: our code and JUCE, via operator new and malloc; libc's own internal "
+                   "allocations are invisible";
+        case Coverage::ourCodeAndLibcInternals:
+            return "coverage: our code and JUCE, PLUS libc's own internal allocations — a non-zero "
+                   "count here is not necessarily ours";
+    }
+
+    return "coverage: unknown";
+}
+
+bool sentinelIsLive()
+{
+    // Through `operator new` deliberately: those overrides take on every platform, where `malloc`
+    // is refused by MSVC. A vector's allocation is not elidable the way a bare malloc/free pair is
+    // — that pair counted 0 on macOS at -O2 and read exactly like a broken interposition.
+    volatile size_t sink = 0;
+    int counted = 0;
+
+    {
+        AllocationSentinel s;
+        std::vector<double> v;
+        v.resize (4096);
+        sink = v.size() + (size_t) (v.data() != nullptr);
+        counted = s.count();
+    }
+
+    (void) sink;
+    return counted > 0;
 }
 
 int AllocationSentinel::frees() const noexcept
