@@ -13,6 +13,27 @@
  #include <malloc/malloc.h>
 #endif
 
+/*  **glibc's real allocator, reached by a name our interposition does not replace.**
+
+    On Linux the definitions below live in the main executable, so EVERY reference to `malloc` in
+    the process binds to ours — including `std::malloc` inside our own `rawAlloc`. That made
+    `malloc -> rawAlloc -> std::malloc -> malloc` an infinite loop, and GCC tail-calls the return,
+    so it never overflows the stack: it spins at 100 % of a core at constant depth, forever, with
+    no output and no crash. `free` had the identical shape.
+
+    `__libc_malloc` and friends are glibc's own entry points and are exactly the escape hatch for
+    an interposer. Where they do not exist — musl, another libc — the interposition is switched OFF
+    rather than left to recurse, and `interposesMalloc()` says so, which is the same honesty the
+    Windows branch already had.
+*/
+#if ! defined (__APPLE__) && ! defined (_WIN32) && defined (__GLIBC__)
+ #define NF_HAS_LIBC_ALLOC 1
+extern "C" void* __libc_malloc (size_t);
+extern "C" void  __libc_free (void*);
+#else
+ #define NF_HAS_LIBC_ALLOC 0
+#endif
+
 namespace
 {
     /** Process-wide allocation counters.
@@ -87,6 +108,8 @@ namespace
     {
        #if defined (__APPLE__)
         return malloc_zone_malloc (malloc_default_zone(), size == 0 ? 1 : size);
+       #elif NF_HAS_LIBC_ALLOC
+        return __libc_malloc (size == 0 ? 1 : size);        // NOT std::malloc — that is ours
        #else
         return std::malloc (size == 0 ? 1 : size);
        #endif
@@ -102,6 +125,8 @@ namespace
             malloc_zone_free (z, p);
         else
             std::free (p);
+       #elif NF_HAS_LIBC_ALLOC
+        __libc_free (p);                                    // NOT std::free — that is ours
        #else
         std::free (p);
        #endif
@@ -145,7 +170,7 @@ namespace
     `operator new`, so on Windows it counts **zero** — exactly how every row read before this
     existed. That is a real hole, and `AllocationSentinel::interposesMalloc()` reports it so a clean
     row on Windows is not mistaken for a clean row on macOS. */
-#if ! defined (_WIN32)
+#if ! defined (_WIN32) && (defined (__APPLE__) || NF_HAS_LIBC_ALLOC)
 
 extern "C" void* malloc (size_t size)
 {
@@ -195,7 +220,7 @@ extern "C" void* realloc (void* old, size_t size)
 // "no allocations" and is indistinguishable from a pass. AllocationSentinel's constructor is defined
 // below, in this same file, so using the sentinel is what drags the overrides in.
 
-#endif // ! _WIN32 — the operator overrides below take on EVERY platform
+#endif // no escape hatch -> no interposition; the operator overrides below take on EVERY platform
 
 void* operator new (size_t size)
 {
@@ -231,7 +256,7 @@ void operator delete[] (void* p) noexcept { noteFree (p); rawFree (p); }
 void operator delete (void* p, size_t) noexcept { noteFree (p); rawFree (p); }
 void operator delete[] (void* p, size_t) noexcept { noteFree (p); rawFree (p); }
 
-#if ! defined (_WIN32)
+#if ! defined (_WIN32) && (defined (__APPLE__) || NF_HAS_LIBC_ALLOC)
 extern "C" void free (void* p) { noteFree (p); rawFree (p); }
 #endif
 

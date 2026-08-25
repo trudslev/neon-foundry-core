@@ -93,7 +93,9 @@ public:
 
     /** **Whether this build can see `malloc` at all**, which is a platform fact and not a state.
 
-        `true` on macOS and Linux, where the `extern "C"` definitions interpose the CRT's. **`false`
+        `true` on macOS and on glibc Linux, where the `extern "C"` definitions interpose the
+        CRT's, and `false` on any other libc — there is no `__libc_malloc` to reach past ourselves
+        with, and an interposition that cannot escape itself recurses rather than measures. **`false`
         on Windows**, where MSVC refuses a second definition of `malloc` outright — `LNK2005 ...
         fatal error LNK1169` — so only `operator new` / `delete` are counted there.
 
@@ -110,8 +112,14 @@ public:
     {
        #if defined (_WIN32)
         return false;
-       #else
+       #elif defined (__APPLE__) || defined (__GLIBC__)
         return true;
+       #else
+        // No escape hatch to the real allocator, so the interposition is OFF rather than
+        // recursive. See the note beside `rawAlloc` — on Linux `std::malloc` inside our own
+        // helper binds back to our `malloc`, which spun a core at constant stack depth until
+        // `__libc_malloc` was used instead.
+        return false;
        #endif
     }
 
