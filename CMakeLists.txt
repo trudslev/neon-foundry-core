@@ -4,6 +4,23 @@ cmake_minimum_required(VERSION 3.24)
 # is the whole point of the pin — nothing here can force a release on a plugin that is mid-cycle.
 project(NeonFoundryCore VERSION 1.0.0 LANGUAGES CXX)
 
+# **MSVC needs /utf-8, and without it a non-ASCII literal is silently replaced by '?'.**
+#
+# MSVC's default execution charset is the system ANSI code page, so a `\u2212` in a narrow string
+# literal has no representation and the compiler substitutes a question mark, warning C4566 and
+# carrying on. Gatecrasher's first Windows test run emitted **168** of those warnings and failed two
+# printed-scale marks: `\u2212` in a mark's numeral became `?`, `parseNumeral` read `?60` as 0, and
+# the check correctly reported that a mark labelled 0 was drawn at the wrong angle.
+#
+# It is not a bad way of writing the character — a universal-character-name is the portable form,
+# and the runtime `charToString ((juce_wchar) 0x2212)` used elsewhere in this suite is unaffected.
+# It is the execution charset, and /utf-8 sets both source and execution to UTF-8.
+#
+# Nothing changes on macOS or Linux, where UTF-8 is already both.
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
