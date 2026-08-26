@@ -254,6 +254,7 @@ target_compile_definitions(neon_foundry_core PUBLIC
 add_library(neon_foundry_core_testing STATIC
     src/testing/ProcessorHarness.cpp
     src/testing/CpuBaseline.cpp
+    src/testing/ExpectedFailure.cpp
     src/testing/ComponentRender.cpp)
 
 add_library(nf::testing ALIAS neon_foundry_core_testing)
