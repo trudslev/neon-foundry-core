@@ -20,7 +20,7 @@ project(NeonFoundryCore VERSION 1.0.0 LANGUAGES CXX)
 #
 # **AND THE REGRESSION IS A HARD ERROR, not a warning nobody reads.**
 #
-# /utf-8 prevents the substitution; /we4566 and /we4819 make its REMOVAL impossible to ship. The
+# /utf-8 prevents the substitution; /we4566 makes its REMOVAL impossible to ship. The
 # 168 warnings that named this defect were in the build output the whole time and nobody read them
 # — the third finding this week already sitting in a channel that is unread by construction: long,
 # mostly noise, and a green tick is not investigated.
@@ -39,7 +39,16 @@ project(NeonFoundryCore VERSION 1.0.0 LANGUAGES CXX)
 # GCC gets no flag: its execution charset is UTF-8 already, so the class does not arise, and an
 # unrecognised -Werror= is itself an error rather than a no-op, so nothing is added blind.
 if(MSVC)
-    add_compile_options(/utf-8 /we4566 /we4819)
+    # **C4819 was here and is deliberately NOT any more.** Its remedy has never been verified on
+    # this toolchain: it was armed in the same edit as C4566 on the strength of being the same
+    # family, and nobody checked that /utf-8 silences it, or what a file that trips it would need
+    # instead. **-Werror FORCES the remedy** — you cannot ship past it — so a class whose remedy is
+    # unverified is an unfixable build rather than a note, and the only ways out would be
+    # disarming the class you just armed or breaking a platform.
+    #
+    # A warning is a claim about the LANGUAGE. The remedy is a claim about the COMPILERS you
+    # actually build with, and the second needs its own evidence.
+    add_compile_options(/utf-8 /we4566)
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(-Werror=invalid-source-encoding)
 endif()
