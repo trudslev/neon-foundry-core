@@ -172,7 +172,22 @@ juce::String currentMachine();
     So a caller asserts when this is true and **reports** when it is false. That keeps the bar
     meaningful where it means something and keeps the measurement visible everywhere else, instead
     of the two other options: a bar that fails on every runner, or a suite that skips its own
-    performance test wherever it is inconvenient. */
+    performance test wherever it is inconvenient.
+
+    **THE GAP THIS LEAVES IS WIDER THAN THE REASON REQUIRES, and naming it is the point.** The
+    argument above is sound about asserting THIS baseline elsewhere. It says nothing against a
+    second baseline recorded on the runner and keyed by `currentMachine()`, which already exists
+    and is already what distinguishes them.
+
+    What the gap costs, stated rather than left to be discovered: **a performance regression can
+    merge through a fully green pipeline.** Nothing in CI will catch it, because nothing in CI
+    asserts. The catch is a local run on the baseline machine, which means the bar has to be run
+    deliberately before a release rather than relied on to have run — the same standing as
+    `check_contrast`, which is correct on the day somebody asks for it and simply is not asked.
+
+    This is recorded as an open design question, not a defect. It is here rather than only in a
+    plan because a reason that licenses a wider conclusion than it supports is invisible to the
+    question *is this still true* — nothing changed, and nothing will. */
 bool baselineTakenOnThisMachine (const CpuProvenance&);
 
 std::vector<CpuComparison> compareToBaseline (const std::vector<CpuCell>& measured,
